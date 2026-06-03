@@ -1,0 +1,22 @@
+# Internal docs
+ai_docs/
+AGENTS.md
+SERVER_CONTRACT.md
+
+# Coverage reports
+coverage/
+
+# Example apps
+example/
+
+# Tests
+test/
+
+# Build artifacts
+build.yaml
+pubspec.lock
+pubspec_overrides.yaml
+
+# IDE & OS
+.git/
+.gitignore
