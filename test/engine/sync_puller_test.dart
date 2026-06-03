@@ -469,4 +469,273 @@ void main() {
       expect(cp!.lastSyncedAt, isNull);
     });
   });
+
+  group('entity type mismatch', () {
+    test('operation is applied under config entity type ignoring op.entityType', () async {
+      when(() => remoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(
+          operations: [
+            RemoteOperation(
+              entityType: 'WrongType',
+              entityId: '1',
+              operation: SyncOperation.insert,
+              payload: {'id': '1'},
+              serverSequence: 1,
+            ),
+          ],
+          latestSequence: 1,
+        ),
+      );
+
+      final puller = SyncPuller(
+        localAdapter: localAdapter,
+        remoteAdapter: remoteAdapter,
+        config: singleConfig(),
+        entityFromJson: fromJson,
+      );
+
+      final result = await puller.run();
+      expect(result.pulled, 1);
+      expect(localAdapter.entities['String']?['1'], isNotNull);
+    });
+  });
+
+  group('checkpoint not advanced on adapter error', () {
+    test('checkpoint lastServerSequence unchanged after pull error', () async {
+      await localAdapter.writeCheckpoint(
+        SyncCheckpoint(id: 'String', entityType: 'String', lastServerSequence: 10),
+      );
+
+      when(() => remoteAdapter.pull(any())).thenThrow(Exception('network'));
+
+      final puller = SyncPuller(
+        localAdapter: localAdapter,
+        remoteAdapter: remoteAdapter,
+        config: singleConfig(),
+        entityFromJson: fromJson,
+      );
+
+      await expectLater(puller.run(), throwsA(isA<Exception>()));
+
+      final cp = await localAdapter.readCheckpoint('String');
+      expect(cp!.lastServerSequence, 10);
+    });
+  });
+
+  group('remote insert/update/delete edge cases', () {
+    test('remote insert does not create a queue entry', () async {
+      when(() => remoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(
+          operations: [
+            _op(operation: SyncOperation.insert, payload: {'id': '1'}, serverSequence: 1),
+          ],
+          latestSequence: 1,
+        ),
+      );
+
+      final puller = SyncPuller(
+        localAdapter: localAdapter,
+        remoteAdapter: remoteAdapter,
+        config: singleConfig(),
+        entityFromJson: fromJson,
+      );
+
+      await puller.run();
+      expect(await localAdapter.fetchPendingEntries('String', 10), isEmpty);
+    });
+
+    test('remote update of non-existent entity upserts it', () async {
+      when(() => remoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(
+          operations: [
+            _op(operation: SyncOperation.update, payload: {'id': '99'}, serverSequence: 1),
+          ],
+          latestSequence: 1,
+        ),
+      );
+
+      final puller = SyncPuller(
+        localAdapter: localAdapter,
+        remoteAdapter: remoteAdapter,
+        config: singleConfig(),
+        entityFromJson: fromJson,
+      );
+
+      await puller.run();
+      expect(localAdapter.entities['String']?['99'], isNotNull);
+    });
+
+    test('remote delete of non-existent entity is handled gracefully', () async {
+      when(() => remoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(
+          operations: [
+            _op(operation: SyncOperation.delete, entityId: 'nonexistent', serverSequence: 3),
+          ],
+          latestSequence: 3,
+        ),
+      );
+
+      final puller = SyncPuller(
+        localAdapter: localAdapter,
+        remoteAdapter: remoteAdapter,
+        config: singleConfig(),
+        entityFromJson: fromJson,
+      );
+
+      await expectLater(puller.run(), completes);
+    });
+  });
+
+  group('checkpoint lastSyncedAt', () {
+    test('is set after pull with operations', () async {
+      when(() => remoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(
+          operations: [
+            _op(operation: SyncOperation.insert, payload: {'id': 's1'}, serverSequence: 1),
+          ],
+          latestSequence: 1,
+        ),
+      );
+
+      final puller = SyncPuller(
+        localAdapter: localAdapter,
+        remoteAdapter: remoteAdapter,
+        config: singleConfig(),
+        entityFromJson: fromJson,
+      );
+
+      await puller.run();
+      final cp = await localAdapter.readCheckpoint('String');
+      expect(cp!.lastSyncedAt, isNotNull);
+    });
+
+    test('is updated on subsequent pull with operations', () async {
+      when(() => remoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(
+          operations: [
+            _op(operation: SyncOperation.insert, payload: {'id': 's1'}, serverSequence: 1),
+          ],
+          latestSequence: 1,
+        ),
+      );
+
+      final puller = SyncPuller(
+        localAdapter: localAdapter,
+        remoteAdapter: remoteAdapter,
+        config: singleConfig(),
+        entityFromJson: fromJson,
+      );
+
+      await puller.run();
+      final cp1 = await localAdapter.readCheckpoint('String');
+
+      when(() => remoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(
+          operations: [
+            _op(operation: SyncOperation.insert, payload: {'id': 's2'}, serverSequence: 2),
+          ],
+          latestSequence: 2,
+        ),
+      );
+
+      await Future.delayed(Duration(milliseconds: 1));
+      await puller.run();
+      final cp2 = await localAdapter.readCheckpoint('String');
+      expect(cp2!.lastSyncedAt!.isAfter(cp1!.lastSyncedAt!), isTrue);
+    });
+  });
+
+  group('payload field verification', () {
+    test('remote insert payload fields are stored correctly', () async {
+      when(() => remoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(
+          operations: [
+            _op(
+              operation: SyncOperation.insert,
+              payload: {'id': 'f1', 'value': 42, 'active': true},
+              serverSequence: 1,
+            ),
+          ],
+          latestSequence: 1,
+        ),
+      );
+
+      final puller = SyncPuller(
+        localAdapter: localAdapter,
+        remoteAdapter: remoteAdapter,
+        config: singleConfig(),
+        entityFromJson: fromJson,
+      );
+
+      await puller.run();
+      final stored = localAdapter.entities['String']?['f1'];
+      expect(stored?['value'], 42);
+      expect(stored?['active'], isTrue);
+    });
+
+    test('insert then update resolves to final state', () async {
+      when(() => remoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(
+          operations: [
+            RemoteOperation(
+              entityType: 'String',
+              entityId: 's1',
+              operation: SyncOperation.insert,
+              payload: {'id': 's1', 'value': 1},
+              serverSequence: 1,
+            ),
+            RemoteOperation(
+              entityType: 'String',
+              entityId: 's1',
+              operation: SyncOperation.update,
+              payload: {'id': 's1', 'value': 99},
+              serverSequence: 2,
+            ),
+          ],
+          latestSequence: 2,
+        ),
+      );
+
+      final puller = SyncPuller(
+        localAdapter: localAdapter,
+        remoteAdapter: remoteAdapter,
+        config: singleConfig(),
+        entityFromJson: fromJson,
+      );
+
+      await puller.run();
+      expect(localAdapter.entities['String']?['s1']?['value'], 99);
+    });
+  });
+
+  group('progress callback', () {
+    test('onProgress is called with correct values', () async {
+      when(() => remoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(
+          operations: [
+            _op(operation: SyncOperation.insert, payload: {'id': 'a'}, serverSequence: 1),
+            _op(operation: SyncOperation.insert, payload: {'id': 'b'}, serverSequence: 2),
+            _op(operation: SyncOperation.delete, entityId: 'c', serverSequence: 3),
+          ],
+          latestSequence: 3,
+        ),
+      );
+
+      final progress = <int>[];
+      final puller = SyncPuller(
+        localAdapter: localAdapter,
+        remoteAdapter: remoteAdapter,
+        config: singleConfig(),
+        entityFromJson: fromJson,
+      );
+
+      await puller.run(
+        onProgress: (processed, total) {
+          progress.add(processed);
+        },
+      );
+
+      expect(progress, [1, 2, 3]);
+    });
+  });
 }

@@ -93,9 +93,16 @@ void main() {
   }
 
   group('SyncEngine', () {
-    test('initial state is SyncIdle', () {
+    test('initial state is SyncIdle with pendingCount = 0', () {
       final e = engine();
-      expect(e.currentState, isA<SyncIdle>());
+      final state = e.currentState as SyncIdle;
+      expect(state.pendingCount, 0);
+    });
+
+    test('SyncIdle.lastSyncedAt is null before first sync', () {
+      final e = engine();
+      final state = e.currentState as SyncIdle;
+      expect(state.lastSyncedAt, isNull);
     });
 
     test('sync() runs push then pull', () async {
@@ -149,6 +156,50 @@ void main() {
       expect(result.pulled, 0);
       verifyNever(() => mockRemoteAdapter.push(any()));
       verify(() => mockRemoteAdapter.pull(any())).called(1);
+    });
+
+    test('sync() returns isClean when no errors or conflicts', () async {
+      when(() => mockRemoteAdapter.push(any())).thenAnswer(
+        (_) async => PushResponse([]),
+      );
+      when(() => mockRemoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(operations: [], latestSequence: 0),
+      );
+
+      final e = engine();
+      final result = await e.sync();
+
+      expect(result.isClean, isTrue);
+    });
+
+    test('SyncIdle.pendingCount is 0 after successful sync', () async {
+      when(() => mockRemoteAdapter.push(any())).thenAnswer(
+        (_) async => PushResponse([]),
+      );
+      when(() => mockRemoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(operations: [], latestSequence: 0),
+      );
+
+      final e = engine();
+      await e.sync();
+
+      final state = e.currentState as SyncIdle;
+      expect(state.pendingCount, 0);
+    });
+
+    test('SyncIdle.lastSyncedAt is set after successful sync', () async {
+      when(() => mockRemoteAdapter.push(any())).thenAnswer(
+        (_) async => PushResponse([]),
+      );
+      when(() => mockRemoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(operations: [], latestSequence: 0),
+      );
+
+      final e = engine();
+      await e.sync();
+
+      final state = e.currentState as SyncIdle;
+      expect(state.lastSyncedAt, isNotNull);
     });
 
     test('concurrent sync() throws StateError', () async {
@@ -300,6 +351,117 @@ void main() {
         e.sync(),
         throwsA(isA<StateError>()),
       );
+    });
+
+    test('state returns to SyncIdle after error on next successful sync', () async {
+      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+
+      when(() => mockRemoteAdapter.push(any())).thenThrow(Exception('Push failed'));
+      await expectLater(engine().sync(), throwsA(isA<Exception>()));
+
+      final e2 = engine();
+      await localAdapter.enqueue(_entry(id: 'e2', entityId: 'p2'));
+      when(() => mockRemoteAdapter.push(any())).thenAnswer(
+        (_) async => PushResponse([
+          SyncEntryResult.accepted(entryId: 'e2', serverSequence: 1),
+        ]),
+      );
+      when(() => mockRemoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(operations: [], latestSequence: 0),
+      );
+
+      await e2.sync();
+      expect(e2.currentState, isA<SyncIdle>());
+    });
+
+    test('SyncInProgress reports processed and total during push', () async {
+      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await localAdapter.enqueue(_entry(id: 'e2', entityId: 'p2'));
+
+      when(() => mockRemoteAdapter.push(any())).thenAnswer(
+        (_) async => PushResponse([
+          SyncEntryResult.accepted(entryId: 'e1', serverSequence: 1),
+          SyncEntryResult.accepted(entryId: 'e2', serverSequence: 2),
+        ]),
+      );
+      when(() => mockRemoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(operations: [], latestSequence: 0),
+      );
+
+      final states = <SyncInProgress>[];
+      final e = engine();
+      final sub = e.state.where((s) => s is SyncInProgress).cast<SyncInProgress>().listen(states.add);
+      await e.sync();
+      await sub.cancel();
+
+      final pushStates = states.where((s) => s.phase == SyncPhase.pushing).toList();
+      expect(pushStates.length, greaterThanOrEqualTo(2));
+      expect(pushStates.last.processed, 2);
+      expect(pushStates.last.total, 2);
+      expect(pushStates.last.progress, 1.0);
+    });
+
+    test('isClean is false when push has errors', () async {
+      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+
+      when(() => mockRemoteAdapter.push(any())).thenAnswer(
+        (_) async => PushResponse([
+          SyncEntryResult.rejected(entryId: 'e1'),
+        ]),
+      );
+
+      final e = engine();
+      final result = await e.push();
+      expect(result.isClean, isFalse);
+    });
+
+    test('SyncError state emitted on push failure', () async {
+      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+
+      when(() => mockRemoteAdapter.push(any())).thenThrow(Exception('fail'));
+
+      final emitted = <SyncState>[];
+      final e = engine();
+      final sub = e.state.listen(emitted.add);
+
+      await expectLater(e.sync(), throwsA(isA<Exception>()));
+      await Future.delayed(Duration.zero);
+
+      expect(emitted.any((s) => s is SyncError), isTrue);
+      expect(e.currentState, isA<SyncError>());
+      expect((e.currentState as SyncError).pendingCount, 0);
+      await sub.cancel();
+    });
+
+    test('skip push when queue is empty, still pull remote', () async {
+      when(() => mockRemoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(operations: [], latestSequence: 0),
+      );
+
+      final result = await engine().sync();
+      expect(result.pushed, 0);
+      expect(result.pulled, 0);
+      verifyNever(() => mockRemoteAdapter.push(any()));
+      verify(() => mockRemoteAdapter.pull(any())).called(1);
+    });
+
+    test('dispose closes the state stream', () async {
+      final e = engine();
+      final done = e.state.drain<dynamic>();
+      e.dispose();
+      await expectLater(done, completes);
+    });
+
+    test('SyncResult duration is greater than zero after sync', () async {
+      when(() => mockRemoteAdapter.push(any())).thenAnswer(
+        (_) async => PushResponse([]),
+      );
+      when(() => mockRemoteAdapter.pull(any())).thenAnswer(
+        (_) async => PullResponse(operations: [], latestSequence: 0),
+      );
+
+      final result = await engine().sync();
+      expect(result.duration, greaterThan(Duration.zero));
     });
   });
 }

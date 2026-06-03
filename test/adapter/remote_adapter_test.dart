@@ -157,6 +157,27 @@ void main() {
       expect(response.results[0].outcome, SyncOutcome.accepted);
       expect(response.results[1].outcome, SyncOutcome.rejected);
     });
+
+    test('fromJson parses empty results array', () {
+      final json = {'results': <Map<String, dynamic>>[]};
+      final response = PushResponse.fromJson(json);
+      expect(response.results, isEmpty);
+    });
+
+    test('fromJson parses mixed outcomes', () {
+      final json = {
+        'results': [
+          _resultJson('accepted', entryId: 'e1', serverSequence: 1),
+          _resultJson('rejected', entryId: 'e2', errorMessage: 'nope'),
+          _resultJson('conflicted', entryId: 'e3', serverPayload: {'key': 'val'}),
+        ],
+      };
+      final response = PushResponse.fromJson(json);
+      expect(response.results.length, 3);
+      expect(response.results[0].outcome, SyncOutcome.accepted);
+      expect(response.results[1].outcome, SyncOutcome.rejected);
+      expect(response.results[2].outcome, SyncOutcome.conflicted);
+    });
   });
 
   group('PullRequest', () {
@@ -190,6 +211,39 @@ void main() {
       expect(op.payload, {'title': 'new'});
       expect(op.serverSequence, 100);
     });
+
+    test('fromJson parses insert operation', () {
+      final op = RemoteOperation.fromJson({
+        'entityType': 'todo',
+        'entityId': 't1',
+        'operation': 'insert',
+        'payload': {},
+        'serverSequence': 1,
+      });
+      expect(op.operation, SyncOperation.insert);
+    });
+
+    test('fromJson parses update operation', () {
+      final op = RemoteOperation.fromJson({
+        'entityType': 'todo',
+        'entityId': 't1',
+        'operation': 'update',
+        'payload': {},
+        'serverSequence': 2,
+      });
+      expect(op.operation, SyncOperation.update);
+    });
+
+    test('fromJson parses delete operation', () {
+      final op = RemoteOperation.fromJson({
+        'entityType': 'todo',
+        'entityId': 't1',
+        'operation': 'delete',
+        'payload': {},
+        'serverSequence': 3,
+      });
+      expect(op.operation, SyncOperation.delete);
+    });
   });
 
   group('PullResponse', () {
@@ -218,6 +272,19 @@ void main() {
       expect(response.latestSequence, 11);
       expect(response.operations[0].entityId, 't1');
       expect(response.operations[1].entityId, 't2');
+    });
+
+    test('fromJson parses empty operations array', () {
+      final json = {'operations': <Map<String, dynamic>>[], 'latestSequence': 0};
+      final response = PullResponse.fromJson(json);
+      expect(response.operations, isEmpty);
+      expect(response.latestSequence, 0);
+    });
+
+    test('fromJson parses latestSequence correctly', () {
+      final json = {'operations': <Map<String, dynamic>>[], 'latestSequence': 99};
+      final response = PullResponse.fromJson(json);
+      expect(response.latestSequence, 99);
     });
   });
 }

@@ -153,5 +153,56 @@ void main() {
         ]),
       );
     });
+
+    test('identical entries have matching fields', () {
+      final a = SyncQueueEntry(
+        id: 'e1',
+        entityType: 't',
+        entityId: '1',
+        operation: SyncOperation.insert,
+        payload: '{}',
+        version: 0,
+        localSequence: 0,
+        createdAt: now,
+      );
+      final b = SyncQueueEntry(
+        id: 'e1',
+        entityType: 't',
+        entityId: '1',
+        operation: SyncOperation.insert,
+        payload: '{}',
+        version: 0,
+        localSequence: 0,
+        createdAt: now,
+      );
+      expect(a.id, b.id);
+      expect(a.entityType, b.entityType);
+      expect(a.operation, b.operation);
+    });
+
+    test('entries with different ids are distinct references', () {
+      final a = SyncQueueEntry(
+        id: 'e1',
+        entityType: 't',
+        entityId: '1',
+        operation: SyncOperation.insert,
+        payload: '{}',
+        version: 0,
+        localSequence: 0,
+        createdAt: now,
+      );
+      final b = SyncQueueEntry(
+        id: 'e2',
+        entityType: 't',
+        entityId: '1',
+        operation: SyncOperation.insert,
+        payload: '{}',
+        version: 0,
+        localSequence: 0,
+        createdAt: now,
+      );
+      expect(identical(a, b), isFalse);
+      expect(a.id, isNot(b.id));
+    });
   });
 }

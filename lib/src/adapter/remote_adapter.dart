@@ -153,7 +153,7 @@ class RemoteOperation {
     entityType: json['entityType'] as String,
     entityId: json['entityId'] as String,
     operation: SyncOperation.values.firstWhere((e) => e.name == json['operation']),
-    payload: json['payload'] as Map<String, dynamic>,
+    payload: Map<String, dynamic>.from(json['payload'] as Map),
     serverSequence: json['serverSequence'] as int,
   );
 }

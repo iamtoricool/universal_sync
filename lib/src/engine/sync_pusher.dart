@@ -39,7 +39,7 @@ class SyncPusher {
        _remoteAdapter = remoteAdapter,
        _config = config,
        _entityFromJson = entityFromJson,
-       _resolvers = resolvers;
+       _resolvers = resolvers ?? config.resolvers;
 
   Future<PushResult> run({
     void Function(int processed, int total)? onProgress,

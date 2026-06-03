@@ -6,6 +6,45 @@ import 'package:universal_sync/universal_sync.dart';
 
 class MockRemoteAdapter extends Mock implements RemoteAdapter {}
 
+class _Customer extends SyncEntity {
+  @override
+  final String id;
+  @override
+  final int version;
+  @override
+  final DateTime createdAt;
+  @override
+  final DateTime updatedAt;
+  @override
+  final DateTime? deletedAt;
+  final String email;
+
+  _Customer({
+    required this.id,
+    this.version = 0,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    this.email = '',
+  }) : deletedAt = null,
+       createdAt = createdAt ?? DateTime(2024),
+       updatedAt = updatedAt ?? DateTime(2024);
+
+  @override
+  Map<String, dynamic> toSyncJson() => {
+    'id': id,
+    'version': version,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt.toIso8601String(),
+    'email': email,
+  };
+
+  factory _Customer.fromJson(Map<String, dynamic> json) => _Customer(
+    id: json['id'] as String,
+    version: json['version'] as int? ?? 0,
+    email: json['email'] as String? ?? '',
+  );
+}
+
 class _Product extends SyncEntity {
   @override
   final String id;
@@ -57,6 +96,7 @@ class _MergeEntityResolver implements ConflictResolver<SyncEntity> {
 SyncQueueEntry _entry({
   required String id,
   required String entityId,
+  String entityType = '_Product',
   int version = 0,
   String? payload,
   SyncOperation operation = SyncOperation.insert,
@@ -65,7 +105,7 @@ SyncQueueEntry _entry({
 }) {
   return SyncQueueEntry(
     id: id,
-    entityType: '_Product',
+    entityType: entityType,
     entityId: entityId,
     operation: operation,
     payload: payload ?? jsonEncode({'id': entityId, 'version': version}),
@@ -480,6 +520,355 @@ void main() {
       expect(result.pushed, 1);
       expect(result.failed, 0);
       expect(result.conflicted, 0);
+    });
+
+    group('batch processing', () {
+      test('pushes entries in batches of config.batchSize', () async {
+        final adapter = InMemoryLocalAdapter();
+        final mock = MockRemoteAdapter();
+        final config = SyncConfig(entityOrder: [_Product], batchSize: 2);
+
+        for (int i = 0; i < 5; i++) {
+          await adapter.enqueue(
+            _entry(id: 'e$i', entityId: 'p$i', localSequence: i),
+          );
+        }
+
+        final batchSizes = <int>[];
+        when(() => mock.push(any())).thenAnswer((invocation) async {
+          final request = invocation.positionalArguments[0] as PushRequest;
+          batchSizes.add(request.entries.length);
+          return PushResponse(
+            request.entries.map((e) => SyncEntryResult.accepted(entryId: e.id, serverSequence: 1)).toList(),
+          );
+        });
+
+        final pusher = SyncPusher(
+          localAdapter: adapter,
+          remoteAdapter: mock,
+          config: config,
+          entityFromJson: {_Product: _Product.fromJson},
+        );
+
+        final result = await pusher.run();
+        expect(result.pushed, 5);
+        expect(batchSizes, [2, 2, 1]);
+        verify(() => mock.push(any())).called(3);
+      });
+
+      test('processes all entries across multiple batches', () async {
+        final adapter = InMemoryLocalAdapter();
+        final mock = MockRemoteAdapter();
+        final config = SyncConfig(entityOrder: [_Product], batchSize: 3);
+
+        for (int i = 0; i < 7; i++) {
+          await adapter.enqueue(
+            _entry(id: 'e$i', entityId: 'p$i', localSequence: i),
+          );
+        }
+
+        when(() => mock.push(any())).thenAnswer((invocation) async {
+          final request = invocation.positionalArguments[0] as PushRequest;
+          return PushResponse(
+            request.entries.map((e) => SyncEntryResult.accepted(entryId: e.id, serverSequence: 1)).toList(),
+          );
+        });
+
+        final pusher = SyncPusher(
+          localAdapter: adapter,
+          remoteAdapter: mock,
+          config: config,
+          entityFromJson: {_Product: _Product.fromJson},
+        );
+
+        final result = await pusher.run();
+        expect(result.pushed, 7);
+      });
+    });
+
+    group('entity order', () {
+      test('pushes entries in entityOrder sequence', () async {
+        final adapter = InMemoryLocalAdapter();
+        final mock = MockRemoteAdapter();
+        final config = SyncConfig(entityOrder: [_Product, _Customer]);
+
+        await adapter.enqueue(
+          _entry(id: 'e1', entityId: 'p1', entityType: '_Product', localSequence: 2),
+        );
+        await adapter.enqueue(
+          _entry(id: 'e2', entityId: 'c1', entityType: '_Customer', localSequence: 1),
+        );
+
+        final pushedTypes = <String>[];
+        when(() => mock.push(any())).thenAnswer((invocation) async {
+          final request = invocation.positionalArguments[0] as PushRequest;
+          pushedTypes.addAll(request.entries.map((e) => e.entityType));
+          return PushResponse(
+            request.entries.map((e) => SyncEntryResult.accepted(entryId: e.id, serverSequence: 1)).toList(),
+          );
+        });
+
+        final pusher = SyncPusher(
+          localAdapter: adapter,
+          remoteAdapter: mock,
+          config: config,
+          entityFromJson: {
+            _Product: _Product.fromJson,
+            _Customer: _Customer.fromJson,
+          },
+        );
+
+        await pusher.run();
+        expect(pushedTypes, ['_Product', '_Customer']);
+      });
+
+      test('does not push entries for entity type not in entityOrder', () async {
+        final adapter = InMemoryLocalAdapter();
+        final mock = MockRemoteAdapter();
+        final config = SyncConfig(entityOrder: [_Product]);
+
+        await adapter.enqueue(
+          _entry(id: 'e1', entityId: 'p1', entityType: '_Product', localSequence: 1),
+        );
+        await adapter.enqueue(
+          _entry(id: 'e2', entityId: 'c1', entityType: '_Customer', localSequence: 2),
+        );
+
+        final pushedTypes = <String>[];
+        when(() => mock.push(any())).thenAnswer((invocation) async {
+          final request = invocation.positionalArguments[0] as PushRequest;
+          pushedTypes.addAll(request.entries.map((e) => e.entityType));
+          return PushResponse(
+            request.entries.map((e) => SyncEntryResult.accepted(entryId: e.id, serverSequence: 1)).toList(),
+          );
+        });
+
+        final pusher = SyncPusher(
+          localAdapter: adapter,
+          remoteAdapter: mock,
+          config: config,
+          entityFromJson: {_Product: _Product.fromJson},
+        );
+
+        await pusher.run();
+        expect(pushedTypes, ['_Product']);
+      });
+    });
+
+    group('order and dedup', () {
+      test('entries pushed in localSequence ascending order', () async {
+        final adapter = InMemoryLocalAdapter();
+        final mock = MockRemoteAdapter();
+        final config = SyncConfig(entityOrder: [_Product]);
+
+        await adapter.enqueue(
+          _entry(id: 'e2', entityId: 'p2', localSequence: 2),
+        );
+        await adapter.enqueue(
+          _entry(id: 'e1', entityId: 'p1', localSequence: 1),
+        );
+
+        final order = <String>[];
+        when(() => mock.push(any())).thenAnswer((invocation) async {
+          final request = invocation.positionalArguments[0] as PushRequest;
+          order.addAll(request.entries.map((e) => e.id));
+          return PushResponse(
+            request.entries.map((e) => SyncEntryResult.accepted(entryId: e.id, serverSequence: 1)).toList(),
+          );
+        });
+
+        final pusher = SyncPusher(
+          localAdapter: adapter,
+          remoteAdapter: mock,
+          config: config,
+          entityFromJson: {_Product: _Product.fromJson},
+        );
+
+        await pusher.run();
+        expect(order, ['e1', 'e2']);
+      });
+
+      test('rejected entry increments failed count', () async {
+        final adapter = InMemoryLocalAdapter();
+        final mock = MockRemoteAdapter();
+        final config = SyncConfig(entityOrder: [_Product], maxRetries: 0);
+
+        await adapter.enqueue(
+          _entry(id: 'e1', entityId: 'p1'),
+        );
+
+        when(() => mock.push(any())).thenAnswer(
+          (_) async => PushResponse([
+            SyncEntryResult.rejected(entryId: 'e1', errorMessage: 'Conflict: version mismatch'),
+          ]),
+        );
+
+        final pusher = SyncPusher(
+          localAdapter: adapter,
+          remoteAdapter: mock,
+          config: config,
+          entityFromJson: {_Product: _Product.fromJson},
+        );
+
+        final result = await pusher.run();
+
+        expect(result.pushed, 0);
+        expect(result.failed, 1);
+      });
+
+      test('ClientWins preserves local data in the database', () async {
+        final adapter = InMemoryLocalAdapter();
+        final mock = MockRemoteAdapter();
+        final config = SyncConfig(
+          entityOrder: [_Product],
+          maxRetries: 0,
+          resolvers: {_Product: ClientWinsResolver<SyncEntity>()},
+        );
+
+        await adapter.upsertEntity('_Product', {'id': 'p1', 'version': 2, 'name': 'Local'});
+        await adapter.enqueue(
+          _entry(id: 'e1', entityId: 'p1', version: 2),
+        );
+
+        when(() => mock.push(any())).thenAnswer(
+          (_) async => PushResponse([
+            SyncEntryResult.conflicted(
+              entryId: 'e1',
+              serverPayload: {'id': 'p1', 'version': 3, 'name': 'Remote'},
+            ),
+          ]),
+        );
+
+        // Check before push
+        expect(adapter.entities['_Product']?['p1']?['name'], 'Local');
+
+        final pusher = SyncPusher(
+          localAdapter: adapter,
+          remoteAdapter: mock,
+          config: config,
+          entityFromJson: {_Product: _Product.fromJson},
+        );
+
+        final result = await pusher.run();
+        expect(result.pushed, 0);
+        expect(result.failed, 0);
+        expect(result.conflicted, 1);
+
+        final stored = adapter.entities['_Product']?['p1'];
+        expect(stored?['name'], 'Local');
+      });
+
+      test('second batch is sent only after first batch is confirmed', () async {
+        final adapter = InMemoryLocalAdapter();
+        final mock = MockRemoteAdapter();
+        final config = SyncConfig(entityOrder: [_Product], batchSize: 2);
+
+        for (int i = 0; i < 4; i++) {
+          await adapter.enqueue(
+            _entry(id: 'e$i', entityId: 'p$i', localSequence: i),
+          );
+        }
+
+        final callOrder = <int>[];
+        when(() => mock.push(any())).thenAnswer((invocation) async {
+          final request = invocation.positionalArguments[0] as PushRequest;
+          callOrder.add(request.entries.length);
+          return PushResponse(
+            request.entries.map((e) => SyncEntryResult.accepted(entryId: e.id, serverSequence: 1)).toList(),
+          );
+        });
+
+        final pusher = SyncPusher(
+          localAdapter: adapter,
+          remoteAdapter: mock,
+          config: config,
+          entityFromJson: {_Product: _Product.fromJson},
+        );
+
+        await pusher.run();
+        expect(callOrder, [2, 2]);
+        verify(() => mock.push(any())).called(2);
+      });
+
+      test('entry without fromJson handler is still marked synced', () async {
+        final adapter = InMemoryLocalAdapter();
+        final mock = MockRemoteAdapter();
+        final config = SyncConfig(entityOrder: [_Product]);
+
+        await adapter.enqueue(
+          _entry(id: 'e1', entityId: 'p1'),
+        );
+
+        when(() => mock.push(any())).thenAnswer(
+          (_) async => PushResponse([
+            SyncEntryResult.accepted(entryId: 'e1', serverSequence: 1),
+          ]),
+        );
+
+        final pusher = SyncPusher(
+          localAdapter: adapter,
+          remoteAdapter: mock,
+          config: config,
+          entityFromJson: {},
+        );
+
+        final result = await pusher.run();
+        expect(result.pushed, 1);
+      });
+
+      test('onProgress callback receives correct counts', () async {
+        final adapter = InMemoryLocalAdapter();
+        final mock = MockRemoteAdapter();
+        final config = SyncConfig(entityOrder: [_Product]);
+
+        for (int i = 0; i < 3; i++) {
+          await adapter.enqueue(
+            _entry(id: 'e$i', entityId: 'p$i', localSequence: i),
+          );
+        }
+
+        when(() => mock.push(any())).thenAnswer(
+          (_) async => PushResponse([
+            SyncEntryResult.accepted(entryId: 'e0', serverSequence: 1),
+            SyncEntryResult.accepted(entryId: 'e1', serverSequence: 2),
+            SyncEntryResult.accepted(entryId: 'e2', serverSequence: 3),
+          ]),
+        );
+
+        final progressValues = <int>[];
+        final pusher = SyncPusher(
+          localAdapter: adapter,
+          remoteAdapter: mock,
+          config: config,
+          entityFromJson: {_Product: _Product.fromJson},
+        );
+
+        await pusher.run(
+          onProgress: (processed, total) {
+            progressValues.add(processed);
+          },
+        );
+
+        expect(progressValues, [1, 2, 3]);
+      });
+    });
+  });
+
+  group('PushResult', () {
+    test('defaults to zero', () {
+      const r = PushResult();
+      expect(r.pushed, 0);
+      expect(r.failed, 0);
+      expect(r.conflicted, 0);
+    });
+
+    test('operator + sums counts', () {
+      const a = PushResult(pushed: 1, failed: 2, conflicted: 3);
+      const b = PushResult(pushed: 4, failed: 5, conflicted: 6);
+      final c = a + b;
+      expect(c.pushed, 5);
+      expect(c.failed, 7);
+      expect(c.conflicted, 9);
     });
   });
 }
