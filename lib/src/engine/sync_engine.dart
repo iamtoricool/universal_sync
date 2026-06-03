@@ -153,7 +153,7 @@ class SyncEngine {
     try {
       return await fn();
     } catch (e, s) {
-      _emitState(SyncError(error: e, stackTrace: s, pendingCount: 0));
+      _emitState(SyncError(error: e, stackTrace: s));
       onError?.call(e, s);
       rethrow;
     } finally {

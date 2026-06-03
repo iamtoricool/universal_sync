@@ -8,6 +8,7 @@ void main() {
     test('constructor assigns all fields correctly', () {
       final entry = SyncQueueEntry(
         id: '1',
+        idempotencyKey: '1',
         entityType: 'note',
         entityId: 'n1',
         operation: SyncOperation.insert,
@@ -17,11 +18,10 @@ void main() {
         status: SyncEntryStatus.pending,
         createdAt: now,
         syncedAt: now,
-        retryCount: 2,
-        errorMessage: 'error',
       );
 
       expect(entry.id, '1');
+      expect(entry.idempotencyKey, '1');
       expect(entry.entityType, 'note');
       expect(entry.entityId, 'n1');
       expect(entry.operation, SyncOperation.insert);
@@ -31,13 +31,12 @@ void main() {
       expect(entry.status, SyncEntryStatus.pending);
       expect(entry.createdAt, now);
       expect(entry.syncedAt, now);
-      expect(entry.retryCount, 2);
-      expect(entry.errorMessage, 'error');
     });
 
     test('constructor defaults are applied correctly', () {
       final entry = SyncQueueEntry(
         id: '2',
+        idempotencyKey: '2',
         entityType: 'note',
         entityId: 'n2',
         operation: SyncOperation.update,
@@ -49,13 +48,12 @@ void main() {
 
       expect(entry.status, SyncEntryStatus.pending);
       expect(entry.syncedAt, isNull);
-      expect(entry.retryCount, 0);
-      expect(entry.errorMessage, isNull);
     });
 
     test('copyWith preserves unset fields', () {
       final entry = SyncQueueEntry(
         id: '3',
+        idempotencyKey: '3',
         entityType: 'note',
         entityId: 'n3',
         operation: SyncOperation.delete,
@@ -64,11 +62,11 @@ void main() {
         localSequence: 20,
         createdAt: now,
         syncedAt: now,
-        errorMessage: null,
       );
 
       final copied = entry.copyWith();
       expect(copied.id, entry.id);
+      expect(copied.idempotencyKey, entry.idempotencyKey);
       expect(copied.entityType, entry.entityType);
       expect(copied.entityId, entry.entityId);
       expect(copied.operation, entry.operation);
@@ -78,13 +76,12 @@ void main() {
       expect(copied.status, entry.status);
       expect(copied.createdAt, entry.createdAt);
       expect(copied.syncedAt, entry.syncedAt);
-      expect(copied.retryCount, entry.retryCount);
-      expect(copied.errorMessage, entry.errorMessage);
     });
 
     test('copyWith overrides set fields', () {
       final entry = SyncQueueEntry(
         id: '4',
+        idempotencyKey: '4',
         entityType: 'note',
         entityId: 'n4',
         operation: SyncOperation.insert,
@@ -111,6 +108,7 @@ void main() {
     test('copyWith with explicit null clears nullable fields', () {
       final entry = SyncQueueEntry(
         id: '5',
+        idempotencyKey: '5',
         entityType: 'note',
         entityId: 'n5',
         operation: SyncOperation.update,
@@ -119,16 +117,13 @@ void main() {
         localSequence: 40,
         createdAt: now,
         syncedAt: now,
-        errorMessage: 'old error',
       );
 
       final copied = entry.copyWith(
         syncedAt: null,
-        errorMessage: null,
       );
 
       expect(copied.syncedAt, isNull);
-      expect(copied.errorMessage, isNull);
     });
 
     test('SyncOperation contains all expected values', () {
@@ -147,7 +142,6 @@ void main() {
         SyncEntryStatus.values,
         containsAll([
           SyncEntryStatus.pending,
-          SyncEntryStatus.processing,
           SyncEntryStatus.synced,
           SyncEntryStatus.failed,
         ]),
@@ -157,6 +151,7 @@ void main() {
     test('identical entries have matching fields', () {
       final a = SyncQueueEntry(
         id: 'e1',
+        idempotencyKey: 'e1',
         entityType: 't',
         entityId: '1',
         operation: SyncOperation.insert,
@@ -167,6 +162,7 @@ void main() {
       );
       final b = SyncQueueEntry(
         id: 'e1',
+        idempotencyKey: 'e1',
         entityType: 't',
         entityId: '1',
         operation: SyncOperation.insert,
@@ -183,6 +179,7 @@ void main() {
     test('entries with different ids are distinct references', () {
       final a = SyncQueueEntry(
         id: 'e1',
+        idempotencyKey: 'e1',
         entityType: 't',
         entityId: '1',
         operation: SyncOperation.insert,
@@ -193,6 +190,7 @@ void main() {
       );
       final b = SyncQueueEntry(
         id: 'e2',
+        idempotencyKey: 'e2',
         entityType: 't',
         entityId: '1',
         operation: SyncOperation.insert,

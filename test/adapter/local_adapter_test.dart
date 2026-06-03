@@ -11,12 +11,7 @@ class _ConcreteLocalAdapter implements LocalAdapter {
   Future<void> enqueue(SyncQueueEntry entry) async {}
 
   @override
-  Future<void> updateQueueEntryStatus(
-    String entryId,
-    SyncEntryStatus status, {
-    int? retryCount,
-    String? errorMessage,
-  }) async {}
+  Future<void> updateQueueEntryStatus(String entryId, SyncEntryStatus status) async {}
 
   @override
   Future<List<SyncQueueEntry>> fetchPendingEntries(String entityType, int limit) async => [];

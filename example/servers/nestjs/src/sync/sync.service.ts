@@ -175,14 +175,21 @@ export class SyncService {
   }
 
   private async nextSequence(txManager: any): Promise<number> {
-    const seq = await txManager.findOne(ServerSequence, {
+    const row = await txManager.findOne(ServerSequence, {
       where: { id: 1 },
     });
-    if (!seq) {
-      await txManager.insert(ServerSequence, { id: 1, current: 1 });
-      return 1;
+    if (!row) {
+      const maxResult = await txManager
+        .createQueryBuilder()
+        .select('MAX(serverSequence)', 'max')
+        .from(SyncLog, 'sync_log')
+        .getRawOne();
+      const initialMax = (maxResult?.max as number) ?? 0;
+      const next = initialMax + 1;
+      await txManager.insert(ServerSequence, { id: 1, current: next });
+      return next;
     }
-    const next = seq.current + 1;
+    const next = row.current + 1;
     await txManager.update(ServerSequence, 1, { current: next });
     return next;
   }

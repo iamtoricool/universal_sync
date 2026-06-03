@@ -25,6 +25,7 @@ void main() {
     test('constructor stores fields', () {
       final entry = PushEntry(
         id: 'e1',
+        idempotencyKey: 'e1',
         entityType: 'todo',
         entityId: 't1',
         operation: SyncOperation.insert,
@@ -42,6 +43,7 @@ void main() {
     test('toJson produces correct map', () {
       final entry = PushEntry(
         id: 'e1',
+        idempotencyKey: 'e1',
         entityType: 'todo',
         entityId: 't1',
         operation: SyncOperation.insert,
@@ -50,6 +52,7 @@ void main() {
       );
       final json = entry.toJson();
       expect(json['id'], 'e1');
+      expect(json['idempotencyKey'], 'e1');
       expect(json['entityType'], 'todo');
       expect(json['operation'], 'insert');
       expect(json['payload'], '{"title":"hello"}');
@@ -61,6 +64,7 @@ void main() {
     test('toJson produces correct map', () {
       final entry = PushEntry(
         id: 'e1',
+        idempotencyKey: 'e1',
         entityType: 'todo',
         entityId: 't1',
         operation: SyncOperation.update,

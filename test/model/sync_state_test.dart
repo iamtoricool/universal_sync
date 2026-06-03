@@ -3,27 +3,20 @@ import 'package:universal_sync/universal_sync.dart';
 
 void main() {
   group('SyncIdle', () {
-    test('defaults to no lastSyncedAt and zero pendingCount', () {
+    test('defaults to no lastSyncedAt', () {
       const s = SyncIdle();
       expect(s.lastSyncedAt, isNull);
-      expect(s.pendingCount, 0);
     });
 
     test('stores lastSyncedAt', () {
-      const s = SyncIdle(pendingCount: 5);
-      expect(s.pendingCount, 5);
+      const s = SyncIdle();
+      expect(s.lastSyncedAt, isNull);
     });
 
     test('equality checks match same values', () {
-      const a = SyncIdle(pendingCount: 3);
-      const b = SyncIdle(pendingCount: 3);
-      expect(a.pendingCount, b.pendingCount);
-    });
-
-    test('equality checks differ on pendingCount', () {
-      const a = SyncIdle(pendingCount: 3);
-      const b = SyncIdle(pendingCount: 5);
-      expect(a.pendingCount, isNot(b.pendingCount));
+      const a = SyncIdle();
+      const b = SyncIdle();
+      expect(a.lastSyncedAt, b.lastSyncedAt);
     });
   });
 
@@ -65,22 +58,9 @@ void main() {
   });
 
   group('SyncError', () {
-    test('stores error, stackTrace, pendingCount', () {
-      const state = SyncError(error: 'err', stackTrace: StackTrace.empty, pendingCount: 2);
+    test('stores error and stackTrace', () {
+      const state = SyncError(error: 'err', stackTrace: StackTrace.empty);
       expect(state.error, 'err');
-      expect(state.pendingCount, 2);
-    });
-
-    test('equality matches same values', () {
-      const a = SyncError(error: 'x', stackTrace: StackTrace.empty, pendingCount: 1);
-      const b = SyncError(error: 'x', stackTrace: StackTrace.empty, pendingCount: 1);
-      expect(a.pendingCount, b.pendingCount);
-    });
-
-    test('equality differs on pendingCount', () {
-      const a = SyncError(error: 'x', stackTrace: StackTrace.empty, pendingCount: 1);
-      const b = SyncError(error: 'x', stackTrace: StackTrace.empty, pendingCount: 2);
-      expect(a.pendingCount, isNot(b.pendingCount));
     });
   });
 }

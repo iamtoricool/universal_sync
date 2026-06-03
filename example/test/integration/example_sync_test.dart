@@ -16,6 +16,7 @@ SyncQueueEntry todoEntry({
   required int localSequence,
   String title = 'Test',
   bool isDone = false,
+  String? idempotencyKey,
 }) {
   final payload = {
     'id': entityId,
@@ -35,6 +36,7 @@ SyncQueueEntry todoEntry({
     version: version,
     localSequence: localSequence,
     createdAt: DateTime(2024),
+    idempotencyKey: idempotencyKey ?? id,
   );
 }
 
@@ -195,7 +197,7 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [Todo], batchSize: 10, maxRetries: 0),
+        config: SyncConfig(entityOrder: [Todo], batchSize: 10),
         entityFromJson: {Todo: Todo.fromJson},
         resolvers: {Todo: ServerWinsResolver<SyncEntity>()},
       );
@@ -247,7 +249,7 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [Todo], batchSize: 10, maxRetries: 0),
+        config: SyncConfig(entityOrder: [Todo], batchSize: 10),
         entityFromJson: {Todo: Todo.fromJson},
         resolvers: {Todo: ClientWinsResolver<SyncEntity>()},
       );
@@ -255,12 +257,10 @@ void main() {
       final result = await engine.sync();
 
       expect(result.conflicted, 1);
-      // Local entity unchanged — ClientWins keeps local, but with maxRetries=0
-      // the entry goes to failed (not synced), so local data is preserved
       expect(localAdapter.entities['Todo']?['t1']?['title'], 'Local');
 
       final pending = await localAdapter.fetchPendingEntries('Todo', 10);
-      expect(pending, isEmpty); // entry marked as failed, not pending
+      expect(pending, isEmpty);
     });
   });
 

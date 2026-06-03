@@ -15,6 +15,7 @@ SyncQueueEntry _entry({
 }) {
   return SyncQueueEntry(
     id: id,
+    idempotencyKey: id,
     entityType: entityType,
     entityId: entityId,
     operation: operation,
@@ -84,7 +85,7 @@ void main() {
     test('updates status, retryCount, errorMessage', () async {
       await adapter.enqueue(_entry(id: 'e1', entityType: 'todo', entityId: 't1', localSequence: 1));
 
-      await adapter.updateQueueEntryStatus('e1', SyncEntryStatus.failed, retryCount: 1, errorMessage: 'err');
+      await adapter.updateQueueEntryStatus('e1', SyncEntryStatus.failed);
 
       final pending = await adapter.fetchPendingEntries('todo', 10);
       expect(pending, isEmpty);

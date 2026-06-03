@@ -7,8 +7,6 @@ void main() {
       final config = SyncConfig(entityOrder: [String]);
       expect(config.entityOrder, [String]);
       expect(config.batchSize, 50);
-      expect(config.maxRetries, 3);
-      expect(config.retryDelay, Duration(seconds: 5));
       expect(config.resolvers, isNull);
     });
 
@@ -16,13 +14,9 @@ void main() {
       final config = SyncConfig(
         entityOrder: [int, double],
         batchSize: 10,
-        maxRetries: 5,
-        retryDelay: Duration(seconds: 10),
       );
       expect(config.entityOrder, [int, double]);
       expect(config.batchSize, 10);
-      expect(config.maxRetries, 5);
-      expect(config.retryDelay, Duration(seconds: 10));
     });
 
     test('throws on empty entityOrder', () {
@@ -58,34 +52,6 @@ void main() {
     test('throws on batchSize <= 0', () {
       expect(
         () => SyncConfig(entityOrder: [String], batchSize: 0),
-        throwsArgumentError,
-      );
-    });
-
-    test('maxRetries = 0 is accepted', () {
-      final config = SyncConfig(entityOrder: [String], maxRetries: 0);
-      expect(config.maxRetries, 0);
-    });
-
-    test('maxRetries error message is descriptive', () {
-      try {
-        SyncConfig(entityOrder: [String], maxRetries: -1);
-        fail('Should have thrown');
-      } on ArgumentError catch (e) {
-        expect(e.message, equals('maxRetries must be >= 0'));
-      }
-    });
-
-    test('throws on negative maxRetries', () {
-      expect(
-        () => SyncConfig(entityOrder: [String], maxRetries: -1),
-        throwsArgumentError,
-      );
-    });
-
-    test('throws on zero retryDelay', () {
-      expect(
-        () => SyncConfig(entityOrder: [String], retryDelay: Duration.zero),
         throwsArgumentError,
       );
     });

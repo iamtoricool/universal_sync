@@ -56,6 +56,7 @@ SyncQueueEntry _entry({
     entityId: entityId,
     operation: operation,
     payload: payload ?? jsonEncode({'id': entityId, 'version': version}),
+    idempotencyKey: id,
     version: version,
     localSequence: localSequence,
     createdAt: DateTime(2024),
@@ -93,10 +94,9 @@ void main() {
   }
 
   group('SyncEngine', () {
-    test('initial state is SyncIdle with pendingCount = 0', () {
+    test('initial state is SyncIdle', () {
       final e = engine();
-      final state = e.currentState as SyncIdle;
-      expect(state.pendingCount, 0);
+      expect(e.currentState, isA<SyncIdle>());
     });
 
     test('SyncIdle.lastSyncedAt is null before first sync', () {
@@ -172,21 +172,6 @@ void main() {
       expect(result.isClean, isTrue);
     });
 
-    test('SyncIdle.pendingCount is 0 after successful sync', () async {
-      when(() => mockRemoteAdapter.push(any())).thenAnswer(
-        (_) async => PushResponse([]),
-      );
-      when(() => mockRemoteAdapter.pull(any())).thenAnswer(
-        (_) async => PullResponse(operations: [], latestSequence: 0),
-      );
-
-      final e = engine();
-      await e.sync();
-
-      final state = e.currentState as SyncIdle;
-      expect(state.pendingCount, 0);
-    });
-
     test('SyncIdle.lastSyncedAt is set after successful sync', () async {
       when(() => mockRemoteAdapter.push(any())).thenAnswer(
         (_) async => PushResponse([]),
@@ -203,23 +188,36 @@ void main() {
     });
 
     test('concurrent sync() throws StateError', () async {
-      final completer = Completer<PushResponse>();
       await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
 
-      when(() => mockRemoteAdapter.push(any())).thenAnswer((_) => completer.future);
+      late Completer<void> gate;
+      gate = Completer<void>();
+      when(() => mockRemoteAdapter.push(any())).thenAnswer((inv) async {
+        final req = inv.positionalArguments[0] as PushRequest;
+        await gate.future;
+        return PushResponse(
+          req.entries
+              .map(
+                (e) => SyncEntryResult.accepted(entryId: e.id, serverSequence: 1),
+              )
+              .toList(),
+        );
+      });
       when(() => mockRemoteAdapter.pull(any())).thenAnswer(
         (_) async => PullResponse(operations: [], latestSequence: 0),
       );
 
       final e = engine();
-      unawaited(e.sync());
+      final sync1 = e.sync();
 
       await expectLater(
         e.sync(),
         throwsA(isA<StateError>()),
       );
 
-      completer.complete(PushResponse([]));
+      gate.complete();
+      await sync1;
+      e.dispose();
     });
 
     test('error in push emits SyncError', () async {
@@ -240,6 +238,7 @@ void main() {
       expect(emitted.any((s) => s is SyncError), isTrue);
       expect(e.currentState, isA<SyncError>());
       await sub.cancel();
+      e.dispose();
     });
 
     test('error in pull emits SyncError', () async {
@@ -265,6 +264,7 @@ void main() {
       expect(emitted.any((s) => s is SyncError), isTrue);
       expect(e.currentState, isA<SyncError>());
       await sub.cancel();
+      e.dispose();
     });
 
     test('state stream emits correct sequence for sync()', () async {
@@ -295,6 +295,7 @@ void main() {
       expect(states.last, isA<SyncIdle>());
 
       await sub.cancel();
+      e.dispose();
     });
 
     test('cancel() stops sync and returns partial result', () async {
@@ -357,7 +358,9 @@ void main() {
       await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
 
       when(() => mockRemoteAdapter.push(any())).thenThrow(Exception('Push failed'));
-      await expectLater(engine().sync(), throwsA(isA<Exception>()));
+      final e1 = engine();
+      await expectLater(e1.sync(), throwsA(isA<Exception>()));
+      e1.dispose();
 
       final e2 = engine();
       await localAdapter.enqueue(_entry(id: 'e2', entityId: 'p2'));
@@ -393,6 +396,7 @@ void main() {
       final sub = e.state.where((s) => s is SyncInProgress).cast<SyncInProgress>().listen(states.add);
       await e.sync();
       await sub.cancel();
+      e.dispose();
 
       final pushStates = states.where((s) => s.phase == SyncPhase.pushing).toList();
       expect(pushStates.length, greaterThanOrEqualTo(2));
@@ -413,24 +417,6 @@ void main() {
       final e = engine();
       final result = await e.push();
       expect(result.isClean, isFalse);
-    });
-
-    test('SyncError state emitted on push failure', () async {
-      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
-
-      when(() => mockRemoteAdapter.push(any())).thenThrow(Exception('fail'));
-
-      final emitted = <SyncState>[];
-      final e = engine();
-      final sub = e.state.listen(emitted.add);
-
-      await expectLater(e.sync(), throwsA(isA<Exception>()));
-      await Future.delayed(Duration.zero);
-
-      expect(emitted.any((s) => s is SyncError), isTrue);
-      expect(e.currentState, isA<SyncError>());
-      expect((e.currentState as SyncError).pendingCount, 0);
-      await sub.cancel();
     });
 
     test('skip push when queue is empty, still pull remote', () async {

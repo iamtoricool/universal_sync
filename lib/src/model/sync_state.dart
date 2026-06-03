@@ -4,9 +4,8 @@ sealed class SyncState {
 
 class SyncIdle extends SyncState {
   final DateTime? lastSyncedAt;
-  final int pendingCount;
 
-  const SyncIdle({this.lastSyncedAt, this.pendingCount = 0});
+  const SyncIdle({this.lastSyncedAt});
 }
 
 class SyncInProgress extends SyncState {
@@ -26,12 +25,10 @@ class SyncInProgress extends SyncState {
 class SyncError extends SyncState {
   final Object error;
   final StackTrace stackTrace;
-  final int pendingCount;
 
   const SyncError({
     required this.error,
     required this.stackTrace,
-    required this.pendingCount,
   });
 }
 

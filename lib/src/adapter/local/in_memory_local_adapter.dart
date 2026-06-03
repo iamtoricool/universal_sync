@@ -21,16 +21,13 @@ class InMemoryLocalAdapter implements LocalAdapter {
   @override
   Future<void> updateQueueEntryStatus(
     String entryId,
-    SyncEntryStatus status, {
-    int? retryCount,
-    String? errorMessage,
-  }) async {
+    SyncEntryStatus status,
+  ) async {
     final index = _queue.indexWhere((e) => e.id == entryId);
     if (index == -1) return;
     _queue[index] = _queue[index].copyWith(
       status: status,
-      retryCount: retryCount,
-      errorMessage: errorMessage,
+      syncedAt: status == SyncEntryStatus.synced ? DateTime.now() : null,
     );
   }
 

@@ -6,12 +6,7 @@ abstract class LocalAdapter {
 
   Future<void> enqueue(SyncQueueEntry entry);
 
-  Future<void> updateQueueEntryStatus(
-    String entryId,
-    SyncEntryStatus status, {
-    int? retryCount,
-    String? errorMessage,
-  });
+  Future<void> updateQueueEntryStatus(String entryId, SyncEntryStatus status);
 
   Future<List<SyncQueueEntry>> fetchPendingEntries(String entityType, int limit);
 

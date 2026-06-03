@@ -101,10 +101,10 @@ SyncQueueEntry _entry({
   String? payload,
   SyncOperation operation = SyncOperation.insert,
   int localSequence = 0,
-  int retryCount = 0,
 }) {
   return SyncQueueEntry(
     id: id,
+    idempotencyKey: id,
     entityType: entityType,
     entityId: entityId,
     operation: operation,
@@ -112,7 +112,6 @@ SyncQueueEntry _entry({
     version: version,
     localSequence: localSequence,
     createdAt: DateTime(2024),
-    retryCount: retryCount,
   );
 }
 
@@ -243,56 +242,21 @@ void main() {
       );
     });
 
-    test('uses ClientWins on conflict and re-queues entry', () async {
+    test('uses ClientWins on conflict and marks entry as synced', () async {
       final adapter = InMemoryLocalAdapter();
       final mock = MockRemoteAdapter();
-      final config = SyncConfig(entityOrder: [_Product], maxRetries: 3);
-
-      await adapter.enqueue(_entry(id: 'e1', entityId: 'p1', retryCount: 0));
-
-      var callCount = 0;
-      when(() => mock.push(any())).thenAnswer((_) async {
-        callCount++;
-        if (callCount == 1) {
-          return PushResponse([
-            SyncEntryResult.conflicted(
-              entryId: 'e1',
-              serverPayload: {'id': 'p1', 'version': 1},
-            ),
-          ]);
-        }
-        return PushResponse([
-          SyncEntryResult.accepted(entryId: 'e1', serverSequence: 2),
-        ]);
-      });
-
-      final pusher = SyncPusher(
-        localAdapter: adapter,
-        remoteAdapter: mock,
-        config: config,
-        entityFromJson: {_Product: _Product.fromJson},
+      final config = SyncConfig(
+        entityOrder: [_Product],
         resolvers: {_Product: ClientWinsResolver<SyncEntity>()},
       );
 
-      final result = await pusher.run();
-
-      expect(result.pushed, 1);
-      expect(result.failed, 0);
-      expect(result.conflicted, 1);
-    });
-
-    test('marks entry as failed when ClientWins exceeds max retries', () async {
-      final adapter = InMemoryLocalAdapter();
-      final mock = MockRemoteAdapter();
-      final config = SyncConfig(entityOrder: [_Product], maxRetries: 3);
-
-      await adapter.enqueue(_entry(id: 'e1', entityId: 'p1', retryCount: 2));
+      await adapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
 
       when(() => mock.push(any())).thenAnswer(
         (_) async => PushResponse([
           SyncEntryResult.conflicted(
             entryId: 'e1',
-            serverPayload: {'id': 'p1', 'version': 2},
+            serverPayload: {'id': 'p1', 'version': 1},
           ),
         ]),
       );
@@ -302,7 +266,6 @@ void main() {
         remoteAdapter: mock,
         config: config,
         entityFromJson: {_Product: _Product.fromJson},
-        resolvers: {_Product: ClientWinsResolver<SyncEntity>()},
       );
 
       final result = await pusher.run();
@@ -310,6 +273,7 @@ void main() {
       expect(result.pushed, 0);
       expect(result.failed, 0);
       expect(result.conflicted, 1);
+      verify(() => mock.push(any())).called(1);
       expect(
         (await adapter.fetchPendingEntries('_Product', 10)),
         isEmpty,
@@ -365,46 +329,12 @@ void main() {
       );
     });
 
-    test('re-queues rejected entry with retryCount incremented', () async {
+    test('marks rejected entry as failed', () async {
       final adapter = InMemoryLocalAdapter();
       final mock = MockRemoteAdapter();
-      final config = SyncConfig(entityOrder: [_Product], maxRetries: 3);
+      final config = SyncConfig(entityOrder: [_Product]);
 
-      await adapter.enqueue(_entry(id: 'e1', entityId: 'p1', retryCount: 0));
-
-      var callCount = 0;
-      when(() => mock.push(any())).thenAnswer((_) async {
-        callCount++;
-        if (callCount == 1) {
-          return PushResponse([
-            SyncEntryResult.rejected(entryId: 'e1', errorMessage: 'server error'),
-          ]);
-        }
-        return PushResponse([
-          SyncEntryResult.accepted(entryId: 'e1', serverSequence: 1),
-        ]);
-      });
-
-      final pusher = SyncPusher(
-        localAdapter: adapter,
-        remoteAdapter: mock,
-        config: config,
-        entityFromJson: {_Product: _Product.fromJson},
-      );
-
-      final result = await pusher.run();
-
-      expect(result.pushed, 1);
-      expect(result.failed, 1);
-      expect(result.conflicted, 0);
-    });
-
-    test('marks rejected entry as failed when max retries reached', () async {
-      final adapter = InMemoryLocalAdapter();
-      final mock = MockRemoteAdapter();
-      final config = SyncConfig(entityOrder: [_Product], maxRetries: 3);
-
-      await adapter.enqueue(_entry(id: 'e1', entityId: 'p1', retryCount: 2));
+      await adapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
 
       when(() => mock.push(any())).thenAnswer(
         (_) async => PushResponse([
@@ -430,7 +360,7 @@ void main() {
       );
     });
 
-    test('resets processing entries on adapter error', () async {
+    test('keeps entries pending on adapter error', () async {
       final adapter = InMemoryLocalAdapter();
       final mock = MockRemoteAdapter();
       final config = SyncConfig(entityOrder: [_Product]);
@@ -691,7 +621,7 @@ void main() {
       test('rejected entry increments failed count', () async {
         final adapter = InMemoryLocalAdapter();
         final mock = MockRemoteAdapter();
-        final config = SyncConfig(entityOrder: [_Product], maxRetries: 0);
+        final config = SyncConfig(entityOrder: [_Product]);
 
         await adapter.enqueue(
           _entry(id: 'e1', entityId: 'p1'),
@@ -721,7 +651,6 @@ void main() {
         final mock = MockRemoteAdapter();
         final config = SyncConfig(
           entityOrder: [_Product],
-          maxRetries: 0,
           resolvers: {_Product: ClientWinsResolver<SyncEntity>()},
         );
 

@@ -65,7 +65,8 @@ class TodoListNotifier extends AsyncNotifier<List<Todo>> {
       await adapter.upsertEntity('Todo', data);
       await adapter.enqueue(
         SyncQueueEntry(
-          id: 'q_$seq',
+          id: const Uuid().v4(),
+          idempotencyKey: const Uuid().v4(),
           entityType: 'Todo',
           entityId: id,
           operation: SyncOperation.insert,
@@ -97,7 +98,8 @@ class TodoListNotifier extends AsyncNotifier<List<Todo>> {
       await adapter.upsertEntity('Todo', data);
       await adapter.enqueue(
         SyncQueueEntry(
-          id: 'q_$seq',
+          id: const Uuid().v4(),
+          idempotencyKey: const Uuid().v4(),
           entityType: 'Todo',
           entityId: id,
           operation: SyncOperation.update,
@@ -125,7 +127,8 @@ class TodoListNotifier extends AsyncNotifier<List<Todo>> {
       await adapter.upsertEntity('Todo', data);
       await adapter.enqueue(
         SyncQueueEntry(
-          id: 'q_$seq',
+          id: const Uuid().v4(),
+          idempotencyKey: const Uuid().v4(),
           entityType: 'Todo',
           entityId: todo.id,
           operation: SyncOperation.update,
@@ -148,7 +151,8 @@ class TodoListNotifier extends AsyncNotifier<List<Todo>> {
     final seq = await adapter.nextSequence();
     await adapter.enqueue(
       SyncQueueEntry(
-        id: 'q_$seq',
+        id: const Uuid().v4(),
+        idempotencyKey: const Uuid().v4(),
         entityType: 'Todo',
         entityId: todo.id,
         operation: SyncOperation.delete,

@@ -1,5 +1,3 @@
-// ignore_for_file: prefer_initializing_formals
-
 import 'dart:convert';
 import 'package:universal_sync/universal_sync.dart';
 import 'package:universal_sync/src/internal/type_utils.dart';
@@ -30,15 +28,12 @@ class SyncPusher {
   final Map<Type, ConflictResolver<SyncEntity>>? _resolvers;
 
   SyncPusher({
-    required LocalAdapter localAdapter,
-    required RemoteAdapter remoteAdapter,
+    required this._localAdapter,
+    required this._remoteAdapter,
     required SyncConfig config,
-    required Map<Type, SyncEntity Function(Map<String, dynamic>)> entityFromJson,
+    required this._entityFromJson,
     Map<Type, ConflictResolver<SyncEntity>>? resolvers,
-  }) : _localAdapter = localAdapter,
-       _remoteAdapter = remoteAdapter,
-       _config = config,
-       _entityFromJson = entityFromJson,
+  }) : _config = config,
        _resolvers = resolvers ?? config.resolvers;
 
   Future<PushResult> run({
@@ -67,18 +62,12 @@ class SyncPusher {
         );
         if (entries.isEmpty) break;
 
-        for (final entry in entries) {
-          await _localAdapter.updateQueueEntryStatus(
-            entry.id,
-            SyncEntryStatus.processing,
-          );
-        }
-
         try {
           final pushEntries = entries
               .map(
                 (e) => PushEntry(
                   id: e.id,
+                  idempotencyKey: e.idempotencyKey,
                   entityType: e.entityType,
                   entityId: e.entityId,
                   operation: e.operation,
@@ -132,22 +121,10 @@ class SyncPusher {
                     break;
 
                   case ConflictStrategy.acceptLocal:
-                    final newRetryCount = entry.retryCount + 1;
-                    if (newRetryCount >= _config.maxRetries) {
-                      await _localAdapter.updateQueueEntryStatus(
-                        entry.id,
-                        SyncEntryStatus.failed,
-                        retryCount: newRetryCount,
-                        errorMessage: 'Max retries reached after conflict',
-                      );
-                    } else {
-                      await _localAdapter.updateQueueEntryStatus(
-                        entry.id,
-                        SyncEntryStatus.pending,
-                        retryCount: newRetryCount,
-                        errorMessage: 'Conflict - re-queued',
-                      );
-                    }
+                    await _localAdapter.updateQueueEntryStatus(
+                      entry.id,
+                      SyncEntryStatus.synced,
+                    );
                     break;
 
                   case ConflictStrategy.merge:
@@ -156,6 +133,7 @@ class SyncPusher {
                     final nextSeq = await _localAdapter.nextSequence();
                     final mergedEntry = SyncQueueEntry(
                       id: 'merged_$nextSeq',
+                      idempotencyKey: 'merged_$nextSeq',
                       entityType: typeName,
                       entityId: mergedData['id'] as String,
                       operation: SyncOperation.update,
@@ -176,22 +154,10 @@ class SyncPusher {
                 break;
 
               case SyncOutcome.rejected:
-                final newRetryCount = entry.retryCount + 1;
-                if (newRetryCount >= _config.maxRetries) {
-                  await _localAdapter.updateQueueEntryStatus(
-                    entry.id,
-                    SyncEntryStatus.failed,
-                    retryCount: newRetryCount,
-                    errorMessage: result.errorMessage,
-                  );
-                } else {
-                  await _localAdapter.updateQueueEntryStatus(
-                    entry.id,
-                    SyncEntryStatus.pending,
-                    retryCount: newRetryCount,
-                    errorMessage: result.errorMessage,
-                  );
-                }
+                await _localAdapter.updateQueueEntryStatus(
+                  entry.id,
+                  SyncEntryStatus.failed,
+                );
                 totalFailed++;
                 break;
             }
@@ -199,12 +165,7 @@ class SyncPusher {
             onProgress?.call(i + 1, entries.length);
           }
         } catch (_) {
-          for (final entry in entries) {
-            await _localAdapter.updateQueueEntryStatus(
-              entry.id,
-              SyncEntryStatus.pending,
-            );
-          }
+          // Network error — entries stay pending, retry with same idempotency keys
           rethrow;
         }
       }

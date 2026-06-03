@@ -88,6 +88,7 @@ class SyncEntryResult {
 
 class PushEntry {
   final String id;
+  final String idempotencyKey;
   final String entityType;
   final String entityId;
   final SyncOperation operation;
@@ -96,6 +97,7 @@ class PushEntry {
 
   const PushEntry({
     required this.id,
+    required this.idempotencyKey,
     required this.entityType,
     required this.entityId,
     required this.operation,
@@ -105,6 +107,7 @@ class PushEntry {
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'idempotencyKey': idempotencyKey,
     'entityType': entityType,
     'entityId': entityId,
     'operation': operation.name,

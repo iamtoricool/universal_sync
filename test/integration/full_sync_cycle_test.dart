@@ -98,6 +98,7 @@ void main() {
       await localAdapter.enqueue(
         SyncQueueEntry(
           id: 'q1',
+          idempotencyKey: 'q1',
           entityType: '_Product',
           entityId: 'p1',
           operation: SyncOperation.insert,
@@ -143,6 +144,7 @@ void main() {
       await localAdapter.enqueue(
         SyncQueueEntry(
           id: 'q1',
+          idempotencyKey: 'q1',
           entityType: '_Product',
           entityId: 'p1',
           operation: SyncOperation.insert,
@@ -156,6 +158,7 @@ void main() {
       await localAdapter.enqueue(
         SyncQueueEntry(
           id: 'q2',
+          idempotencyKey: 'q2',
           entityType: '_Customer',
           entityId: 'c1',
           operation: SyncOperation.insert,
@@ -202,6 +205,7 @@ void main() {
       await localAdapter.enqueue(
         SyncQueueEntry(
           id: 'q1',
+          idempotencyKey: 'q1',
           entityType: '_Product',
           entityId: 'p1',
           operation: SyncOperation.insert,
@@ -248,6 +252,7 @@ void main() {
       await localAdapter.enqueue(
         SyncQueueEntry(
           id: 'q1',
+          idempotencyKey: 'q1',
           entityType: '_Product',
           entityId: 'p1',
           operation: SyncOperation.insert,
@@ -289,7 +294,6 @@ void main() {
 
       final pending = await localAdapter.fetchPendingEntries('_Product', 10);
       expect(pending.length, 1);
-      expect(pending[0].status, SyncEntryStatus.pending);
 
       final result = await engine.sync();
       expect(result.pushed, 1);
@@ -340,6 +344,7 @@ void main() {
       await localAdapter.enqueue(
         SyncQueueEntry(
           id: 'q1',
+          idempotencyKey: 'q1',
           entityType: '_Product',
           entityId: 'p1',
           operation: SyncOperation.update,
@@ -380,6 +385,7 @@ void main() {
       await localAdapter.enqueue(
         SyncQueueEntry(
           id: 'q1',
+          idempotencyKey: 'q1',
           entityType: '_Product',
           entityId: 'p1',
           operation: SyncOperation.delete,
@@ -509,6 +515,7 @@ void main() {
       await localAdapter.enqueue(
         SyncQueueEntry(
           id: 'q1',
+          idempotencyKey: 'q1',
           entityType: '_Product',
           entityId: 'p1',
           operation: SyncOperation.insert,
@@ -537,7 +544,6 @@ void main() {
         config: SyncConfig(
           entityOrder: [_Product],
           batchSize: 10,
-          maxRetries: 0,
         ),
         entityFromJson: {_Product: _Product.fromJson},
         resolvers: {_Product: ClientWinsResolver<SyncEntity>()},
@@ -546,6 +552,8 @@ void main() {
       final result = await engine.sync();
       expect(result.conflicted, 1);
       expect(localAdapter.entities['_Product']?['p1']?['name'], 'Local');
+      final pending = await localAdapter.fetchPendingEntries('_Product', 10);
+      expect(pending, isEmpty);
     });
 
     test('state stream transitions through correct phases', () async {
@@ -555,6 +563,7 @@ void main() {
       await localAdapter.enqueue(
         SyncQueueEntry(
           id: 'q1',
+          idempotencyKey: 'q1',
           entityType: '_Product',
           entityId: 'p1',
           operation: SyncOperation.insert,
@@ -588,45 +597,6 @@ void main() {
 
       expect(phases.first, SyncPhase.pushing);
       expect(phases.last, SyncPhase.pulling);
-    });
-
-    test('SyncIdle.pendingCount reflects offline writes before sync', () async {
-      final localAdapter = InMemoryLocalAdapter();
-      final mockRemote = MockRemoteAdapter();
-
-      final engine = SyncEngine(
-        localAdapter: localAdapter,
-        remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [_Product], batchSize: 10),
-        entityFromJson: {_Product: _Product.fromJson},
-      );
-
-      expect((engine.currentState as SyncIdle).pendingCount, 0);
-
-      await localAdapter.enqueue(
-        SyncQueueEntry(
-          id: 'q1',
-          entityType: '_Product',
-          entityId: 'p1',
-          operation: SyncOperation.insert,
-          payload: jsonEncode({'id': 'p1', 'version': 0}),
-          version: 0,
-          localSequence: 0,
-          createdAt: DateTime(2024),
-        ),
-      );
-
-      expect((engine.currentState as SyncIdle).pendingCount, 0);
-
-      when(() => mockRemote.push(any())).thenAnswer(
-        (_) async => PushResponse([SyncEntryResult.accepted(entryId: 'q1', serverSequence: 1)]),
-      );
-      when(() => mockRemote.pull(any())).thenAnswer(
-        (_) async => PullResponse(operations: [], latestSequence: 1),
-      );
-
-      await engine.sync();
-      expect((engine.currentState as SyncIdle).pendingCount, 0);
     });
 
     test('multi-type pull applies operations for all entity types', () async {
