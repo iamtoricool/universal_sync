@@ -7,6 +7,7 @@ import { RefreshToken } from './auth/refresh-token.entity';
 import { ServerSequence } from './sync/entities/server-sequence.entity';
 import { SyncLog } from './sync/entities/sync-log.entity';
 import { Todo } from './sync/entities/todo.entity';
+import { Category } from './sync/entities/category.entity';
 import { ProcessedEntry } from './sync/entities/processed-entry.entity';
 
 @Module({
@@ -15,7 +16,7 @@ import { ProcessedEntry } from './sync/entities/processed-entry.entity';
       type: 'sqljs',
       location: './data/sync.db',
       autoSave: true,
-      entities: [User, RefreshToken, ServerSequence, SyncLog, Todo, ProcessedEntry],
+      entities: [User, RefreshToken, ServerSequence, SyncLog, Todo, Category, ProcessedEntry],
       synchronize: true,
     }),
     AuthModule,

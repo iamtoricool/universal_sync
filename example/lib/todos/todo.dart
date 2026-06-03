@@ -14,6 +14,7 @@ class Todo extends SyncEntity {
   final String title;
   final String description;
   final bool isDone;
+  final String? categoryId;
 
   const Todo({
     required this.id,
@@ -24,6 +25,7 @@ class Todo extends SyncEntity {
     required this.title,
     this.description = '',
     this.isDone = false,
+    this.categoryId,
   });
 
   Todo copyWith({
@@ -35,6 +37,7 @@ class Todo extends SyncEntity {
     String? title,
     String? description,
     bool? isDone,
+    Object? categoryId = _unset,
   }) {
     return Todo(
       id: id ?? this.id,
@@ -47,6 +50,9 @@ class Todo extends SyncEntity {
       title: title ?? this.title,
       description: description ?? this.description,
       isDone: isDone ?? this.isDone,
+      categoryId: identical(categoryId, _unset)
+          ? this.categoryId
+          : categoryId as String?,
     );
   }
 
@@ -64,6 +70,7 @@ class Todo extends SyncEntity {
       isDone: json['isDone'] is int
           ? (json['isDone'] as int) == 1
           : json['isDone'] as bool,
+      categoryId: json['categoryId'] as String?,
     );
   }
 
@@ -78,6 +85,7 @@ class Todo extends SyncEntity {
       'title': title,
       'description': description,
       'isDone': isDone,
+      'categoryId': categoryId,
     };
   }
 }

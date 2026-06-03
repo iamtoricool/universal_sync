@@ -5,6 +5,8 @@ import 'package:universal_sync/universal_sync.dart';
 import 'package:uuid/uuid.dart';
 
 import '../auth/auth_provider.dart';
+import 'category.dart';
+import 'category_providers.dart';
 import 'rest_remote_adapter.dart';
 import 'todo.dart';
 
@@ -19,8 +21,8 @@ final universalSyncProvider = FutureProvider<UniversalSync>((ref) async {
   final sync = UniversalSync(
     localAdapter: adapter,
     remoteAdapter: remote,
-    config: SyncConfig(entityOrder: [Todo]),
-    entityFromJson: {Todo: Todo.fromJson},
+    config: SyncConfig(entityOrder: [TodoCategory, Todo]),
+    entityFromJson: {Todo: Todo.fromJson, TodoCategory: TodoCategory.fromJson},
   );
   await sync.init();
   ref.onDispose(() => sync.dispose());
@@ -33,9 +35,18 @@ final pendingCountProvider = FutureProvider<int>((ref) async {
   return pending.length;
 });
 
+final selectedCategoryIdProvider = StateProvider<String?>((ref) => null);
+
+final totalPendingCountProvider = FutureProvider<int>((ref) async {
+  final todoPending = await ref.watch(pendingCountProvider.future);
+  final catPending = await ref.watch(pendingCategoryCountProvider.future);
+  return todoPending + catPending;
+});
+
 class TodoListNotifier extends AsyncNotifier<List<Todo>> {
   @override
   Future<List<Todo>> build() async {
+    ref.watch(syncStateProvider);
     final adapter = ref.read(adapterProvider);
     final entities = adapter.entities;
     final todoMaps = entities['Todo']?.values ?? <Map<String, dynamic>>[];
@@ -47,7 +58,11 @@ class TodoListNotifier extends AsyncNotifier<List<Todo>> {
     return todos;
   }
 
-  Future<void> addTodo(String title, String description) async {
+  Future<void> addTodo(
+    String title,
+    String description, {
+    String? categoryId,
+  }) async {
     final adapter = ref.read(adapterProvider);
     final id = const Uuid().v4();
     final now = DateTime.now();
@@ -58,6 +73,7 @@ class TodoListNotifier extends AsyncNotifier<List<Todo>> {
       updatedAt: now,
       title: title,
       description: description,
+      categoryId: categoryId,
     );
     final data = todo.toSyncJson();
     final seq = await adapter.nextSequence();
@@ -81,7 +97,12 @@ class TodoListNotifier extends AsyncNotifier<List<Todo>> {
     ref.invalidate(pendingCountProvider);
   }
 
-  Future<void> updateTodo(String id, String title, String description) async {
+  Future<void> updateTodo(
+    String id,
+    String title,
+    String description, {
+    String? categoryId,
+  }) async {
     final adapter = ref.read(adapterProvider);
     final map = adapter.entities['Todo']?[id];
     if (map == null) return;
@@ -90,6 +111,7 @@ class TodoListNotifier extends AsyncNotifier<List<Todo>> {
     final updated = todo.copyWith(
       title: title,
       description: description,
+      categoryId: categoryId,
       updatedAt: now,
     );
     final data = updated.toSyncJson();
@@ -173,11 +195,13 @@ class TodoListNotifier extends AsyncNotifier<List<Todo>> {
     } catch (_) {}
     ref.invalidateSelf();
     ref.invalidate(pendingCountProvider);
+    ref.invalidate(pendingCategoryCountProvider);
   }
 
   void resetAndInvalidate() {
     ref.invalidateSelf();
     ref.invalidate(pendingCountProvider);
+    ref.invalidate(pendingCategoryCountProvider);
   }
 }
 

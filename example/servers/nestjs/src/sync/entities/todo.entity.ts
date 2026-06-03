@@ -28,5 +28,8 @@ export class Todo {
   updatedAt: string;
 
   @Column({ type: 'text', nullable: true })
+  categoryId: string | null;
+
+  @Column({ type: 'text', nullable: true })
   deletedAt: string | null;
 }

@@ -9,8 +9,8 @@ class SyncStatusIndicator extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final stateAsync = ref.watch(syncStateProvider);
-    final pendingAsync = ref.watch(pendingCountProvider);
-    final pending = pendingAsync.valueOrNull ?? 0;
+    final totalPendingAsync = ref.watch(totalPendingCountProvider);
+    final pending = totalPendingAsync.valueOrNull ?? 0;
 
     final syncState = stateAsync.valueOrNull;
 

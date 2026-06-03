@@ -7,12 +7,13 @@ import { SyncService } from './sync.service';
 import { ServerSequence } from './entities/server-sequence.entity';
 import { SyncLog } from './entities/sync-log.entity';
 import { Todo } from './entities/todo.entity';
+import { Category } from './entities/category.entity';
 import { ProcessedEntry } from './entities/processed-entry.entity';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ServerSequence, SyncLog, Todo, ProcessedEntry]),
+    TypeOrmModule.forFeature([ServerSequence, SyncLog, Todo, Category, ProcessedEntry]),
     AuthModule,
   ],
   controllers: [SyncController],

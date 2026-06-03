@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'category_providers.dart';
 import 'providers.dart';
 import 'todo.dart';
 
@@ -15,6 +16,8 @@ class _ManageTodoPageState extends ConsumerState<ManageTodoPage> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
+  String? _selectedCategoryId;
+  bool _initialized = false;
 
   bool get _isEditing => widget.todo != null;
 
@@ -25,6 +28,18 @@ class _ManageTodoPageState extends ConsumerState<ManageTodoPage> {
     _descriptionController = TextEditingController(
       text: widget.todo?.description ?? '',
     );
+    _selectedCategoryId = widget.todo?.categoryId;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      _initialized = true;
+      if (widget.todo == null && _selectedCategoryId == null) {
+        _selectedCategoryId = ref.read(selectedCategoryIdProvider);
+      }
+    }
   }
 
   @override
@@ -43,6 +58,7 @@ class _ManageTodoPageState extends ConsumerState<ManageTodoPage> {
             widget.todo!.id,
             _titleController.text.trim(),
             _descriptionController.text.trim(),
+            categoryId: _selectedCategoryId,
           );
     } else {
       await ref
@@ -50,9 +66,43 @@ class _ManageTodoPageState extends ConsumerState<ManageTodoPage> {
           .addTodo(
             _titleController.text.trim(),
             _descriptionController.text.trim(),
+            categoryId: _selectedCategoryId,
           );
     }
     if (mounted) Navigator.pop(context);
+  }
+
+  Widget _buildCategoryDropdown() {
+    final categoriesAsync = ref.watch(categoryListProvider);
+    return categoriesAsync.when(
+      data: (categories) => DropdownButtonFormField<String?>(
+        initialValue: _selectedCategoryId,
+        decoration: const InputDecoration(labelText: 'Category'),
+        items: [
+          const DropdownMenuItem(value: null, child: Text('None')),
+          ...categories.map(
+            (cat) => DropdownMenuItem(
+              value: cat.id,
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: Color(
+                      int.parse(cat.color.replaceFirst('#', '0xFF')),
+                    ),
+                    radius: 6,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(cat.name),
+                ],
+              ),
+            ),
+          ),
+        ],
+        onChanged: (v) => setState(() => _selectedCategoryId = v),
+      ),
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+    );
   }
 
   @override
@@ -78,6 +128,8 @@ class _ManageTodoPageState extends ConsumerState<ManageTodoPage> {
                 decoration: const InputDecoration(labelText: 'Description'),
                 maxLines: 3,
               ),
+              const SizedBox(height: 16),
+              _buildCategoryDropdown(),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
