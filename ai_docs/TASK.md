@@ -493,3 +493,9 @@ dart test test/engine/sync_pusher_test.dart
 - Use `mocktail` for `RemoteAdapter` mocks
 - Use `InMemoryLocalAdapter` as the concrete `LocalAdapter` in all tests
 - Never mock `LocalAdapter` in engine tests — always use `InMemoryLocalAdapter`
+
+---
+
+## Pending
+
+- [ ] **Server `handlePull` deduplication**: Collapse sync log entries to latest-per-entity before returning, so a device pulling with `sinceSequence=0` gets only the final state of each entity, not the full change history. See `example/servers/nestjs/src/sync/sync.service.ts:handlePull`.
