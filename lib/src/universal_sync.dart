@@ -1,42 +1,32 @@
-// ignore_for_file: prefer_initializing_formals
-
 import 'package:universal_sync/universal_sync.dart';
-import 'package:universal_sync/src/engine/sync_engine.dart';
 
 class UniversalSync {
-  final LocalAdapter _localAdapter;
-  final RemoteAdapter _remoteAdapter;
-  final SyncConfig _config;
-  final Map<Type, SyncEntity Function(Map<String, dynamic>)> _entityFromJson;
-  final Map<Type, ConflictResolver<SyncEntity>>? _resolvers;
-  final OnSyncStart? _onSyncStart;
-  final OnSyncComplete? _onSyncComplete;
-  final OnError? _onError;
+  final LocalAdapter localAdapter;
+  final RemoteAdapter remoteAdapter;
+  final SyncConfig config;
+  final Map<Type, SyncEntity Function(Map<String, dynamic>)> entityFromJson;
+  final Map<Type, ConflictResolver<SyncEntity>>? resolvers;
+  final OnSyncStart? onSyncStart;
+  final OnSyncComplete? onSyncComplete;
+  final OnError? onError;
 
   bool _initialized = false;
   SyncEngine? _engine;
 
   UniversalSync({
-    required LocalAdapter localAdapter,
-    required RemoteAdapter remoteAdapter,
-    required SyncConfig config,
-    required Map<Type, SyncEntity Function(Map<String, dynamic>)> entityFromJson,
-    Map<Type, ConflictResolver<SyncEntity>>? resolvers,
-    OnSyncStart? onSyncStart,
-    OnSyncComplete? onSyncComplete,
-    OnError? onError,
-  }) : _localAdapter = localAdapter,
-       _remoteAdapter = remoteAdapter,
-       _config = config,
-       _entityFromJson = entityFromJson,
-       _resolvers = resolvers,
-       _onSyncStart = onSyncStart,
-       _onSyncComplete = onSyncComplete,
-       _onError = onError;
+    required this.localAdapter,
+    required this.remoteAdapter,
+    required this.config,
+    required this.entityFromJson,
+    this.resolvers,
+    this.onSyncStart,
+    this.onSyncComplete,
+    this.onError,
+  });
 
   Future<void> init() async {
-    for (final type in _config.entityOrder) {
-      if (!_entityFromJson.containsKey(type)) {
+    for (final type in config.entityOrder) {
+      if (!entityFromJson.containsKey(type)) {
         throw ArgumentError(
           'Missing fromJson factory for type: $type. '
           'All types in entityOrder must have a corresponding fromJson factory.',
@@ -51,19 +41,19 @@ class UniversalSync {
       throw StateError('UniversalSync not initialized. Call init() first.');
     }
     _engine ??= SyncEngine(
-      localAdapter: _localAdapter,
-      remoteAdapter: _remoteAdapter,
-      config: _config,
-      entityFromJson: _entityFromJson,
-      resolvers: _resolvers,
-      onSyncStart: _onSyncStart,
-      onSyncComplete: _onSyncComplete,
-      onError: _onError,
+      localAdapter: localAdapter,
+      remoteAdapter: remoteAdapter,
+      config: config,
+      entityFromJson: entityFromJson,
+      resolvers: resolvers,
+      onSyncStart: onSyncStart,
+      onSyncComplete: onSyncComplete,
+      onError: onError,
     );
     return _engine!;
   }
 
-  Future<void> dispose() async {
+  void dispose() {
     _engine?.dispose();
     _engine = null;
     _initialized = false;

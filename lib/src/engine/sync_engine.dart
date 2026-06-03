@@ -1,17 +1,14 @@
-// ignore_for_file: prefer_initializing_formals
-
 import 'dart:async';
 import 'package:universal_sync/universal_sync.dart';
-import 'package:universal_sync/src/engine/sync_puller.dart';
 
 typedef OnSyncStart = void Function();
 typedef OnSyncComplete = void Function(SyncResult result);
 typedef OnError = void Function(Object error, StackTrace stackTrace);
 
 class SyncEngine {
-  final OnSyncStart? _onSyncStart;
-  final OnSyncComplete? _onSyncComplete;
-  final OnError? _onError;
+  final OnSyncStart? onSyncStart;
+  final OnSyncComplete? onSyncComplete;
+  final OnError? onError;
 
   late final SyncPusher _pusher;
   late final SyncPuller _puller;
@@ -19,7 +16,7 @@ class SyncEngine {
   bool _isRunning = false;
   bool _disposed = false;
   bool _cancelled = false;
-  SyncState _currentState = SyncIdle();
+  SyncState _currentState = const SyncIdle();
 
   SyncEngine({
     required LocalAdapter localAdapter,
@@ -27,12 +24,10 @@ class SyncEngine {
     required SyncConfig config,
     required Map<Type, SyncEntity Function(Map<String, dynamic>)> entityFromJson,
     Map<Type, ConflictResolver<SyncEntity>>? resolvers,
-    OnSyncStart? onSyncStart,
-    OnSyncComplete? onSyncComplete,
-    OnError? onError,
-  }) : _onSyncStart = onSyncStart,
-       _onSyncComplete = onSyncComplete,
-       _onError = onError {
+    this.onSyncStart,
+    this.onSyncComplete,
+    this.onError,
+  }) {
     _controller = StreamController<SyncState>.broadcast(
       onListen: () => _controller.add(_currentState),
     );
@@ -69,7 +64,7 @@ class SyncEngine {
     return _runGuarded(() async {
       final startTime = DateTime.now();
       _cancelled = false;
-      _onSyncStart?.call();
+      onSyncStart?.call();
 
       _emitState(SyncInProgress(phase: SyncPhase.pushing, processed: 0, total: 0));
       final pushResult = await _pusher.run(
@@ -111,7 +106,7 @@ class SyncEngine {
     return _runGuarded(() async {
       final startTime = DateTime.now();
       _cancelled = false;
-      _onSyncStart?.call();
+      onSyncStart?.call();
 
       _emitState(SyncInProgress(phase: SyncPhase.pushing, processed: 0, total: 0));
       final pushResult = await _pusher.run(
@@ -135,7 +130,7 @@ class SyncEngine {
     return _runGuarded(() async {
       final startTime = DateTime.now();
       _cancelled = false;
-      _onSyncStart?.call();
+      onSyncStart?.call();
 
       _emitState(SyncInProgress(phase: SyncPhase.pulling, processed: 0, total: 0));
       final pullResult = await _puller.run(
@@ -159,7 +154,7 @@ class SyncEngine {
       return await fn();
     } catch (e, s) {
       _emitState(SyncError(error: e, stackTrace: s, pendingCount: 0));
-      _onError?.call(e, s);
+      onError?.call(e, s);
       rethrow;
     } finally {
       _isRunning = false;
@@ -176,7 +171,7 @@ class SyncEngine {
       duration: duration,
     );
     _emitState(SyncIdle(lastSyncedAt: DateTime.now()));
-    _onSyncComplete?.call(result);
+    onSyncComplete?.call(result);
     return result;
   }
 

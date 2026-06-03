@@ -1,7 +1,6 @@
 import 'package:test/test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:universal_sync/universal_sync.dart';
-import 'package:universal_sync/src/engine/sync_puller.dart';
 
 class MockRemoteAdapter extends Mock implements RemoteAdapter {}
 

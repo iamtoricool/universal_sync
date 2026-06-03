@@ -16,6 +16,8 @@ export 'src/conflict/client_wins_resolver.dart';
 
 export 'src/config/sync_config.dart';
 
+export 'src/engine/sync_engine.dart';
+export 'src/engine/sync_puller.dart';
 export 'src/engine/sync_pusher.dart';
 
 export 'src/universal_sync.dart';

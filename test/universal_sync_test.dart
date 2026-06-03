@@ -1,7 +1,6 @@
 import 'package:test/test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:universal_sync/universal_sync.dart';
-import 'package:universal_sync/src/engine/sync_engine.dart';
 
 class MockRemoteAdapter extends Mock implements RemoteAdapter {}
 
@@ -129,7 +128,7 @@ void main() {
 
       await us.init();
       final engine = us.engine;
-      await us.dispose();
+      us.dispose();
 
       expect(
         () => engine.sync(),
@@ -160,7 +159,7 @@ void main() {
       expect(result.failed, 0);
       expect(result.conflicted, 0);
 
-      await us.dispose();
+      us.dispose();
       expect(
         () => us.engine,
         throwsA(isA<StateError>()),

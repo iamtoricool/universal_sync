@@ -1,4 +1,6 @@
 abstract class SyncEntity {
+  const SyncEntity();
+
   String get id;
   int get version;
   DateTime get createdAt;
