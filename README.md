@@ -21,14 +21,12 @@ Then run `dart pub get` (or `flutter pub get`) in your terminal.
 
 ## Usage
 
-A simple usage example:
-
 ```dart
 import 'package:universal_sync/universal_sync.dart';
 
 void main() {
-  var awesome = Awesome();
-  print('awesome: ${awesome.isAwesome}');
+  // See example/ for usage patterns.
+  // Documentation will expand as the API stabilizes.
 }
 ```
 

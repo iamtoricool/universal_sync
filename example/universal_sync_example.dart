@@ -1,6 +1,5 @@
-import 'package:universal_sync/universal_sync.dart';
-
+// Example usage of universal_sync.
+// This will be expanded as the package matures.
 void main() {
-  var awesome = Awesome();
-  print('awesome: ${awesome.isAwesome}');
+  print('universal_sync: ORM-agnostic offline-first sync engine for Dart & Flutter.');
 }

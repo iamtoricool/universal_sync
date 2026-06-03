@@ -1,3 +1,5 @@
-## 1.0.0
+## 0.0.1+1-alpha
 
-- Initial version.
+- Initial development release.
+- ORM-agnostic architecture with LocalAdapter/RemoteAdapter interfaces.
+- Zero runtime dependencies.
