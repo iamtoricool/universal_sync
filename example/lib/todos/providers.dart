@@ -29,9 +29,8 @@ final universalSyncProvider = FutureProvider<UniversalSync>((ref) async {
 
 final pendingCountProvider = FutureProvider<int>((ref) async {
   final adapter = ref.watch(adapterProvider);
-  final queue = adapter.entities;
-  final todos = queue['Todo']?.values ?? <Map<String, dynamic>>[];
-  return todos.length;
+  final pending = await adapter.fetchPendingEntries('Todo', 9999);
+  return pending.length;
 });
 
 class TodoListNotifier extends AsyncNotifier<List<Todo>> {

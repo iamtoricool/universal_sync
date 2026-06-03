@@ -68,7 +68,7 @@ export class SyncService {
                 results.push(new SyncEntryResultDto({
                   entryId: entry.id,
                   outcome: 'conflicted',
-                  serverPayload: this.todoToCamel(existing),
+                  serverPayload: JSON.stringify(this.todoToCamel(existing)),
                 }));
                 continue;
               }
@@ -154,7 +154,13 @@ export class SyncService {
       order: { serverSequence: 'DESC' },
     });
 
-    const operations: RemoteOperationDto[] = rows.map((r) => ({
+    const dedupMap = new Map<string, typeof rows[0]>();
+    for (const row of rows) {
+      dedupMap.set(row.entityId, row);
+    }
+    const deduplicated = Array.from(dedupMap.values());
+
+    const operations: RemoteOperationDto[] = deduplicated.map((r) => ({
       entityType: r.entityType,
       entityId: r.entityId,
       operation: r.operation,
