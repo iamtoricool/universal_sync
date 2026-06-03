@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_initializing_formals
+
 import 'dart:async';
 import 'package:universal_sync/universal_sync.dart';
 import 'package:universal_sync/src/engine/sync_puller.dart';

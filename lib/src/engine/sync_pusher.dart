@@ -1,5 +1,6 @@
-import 'dart:convert';
+// ignore_for_file: prefer_initializing_formals
 
+import 'dart:convert';
 import 'package:universal_sync/universal_sync.dart';
 import 'package:universal_sync/src/internal/type_utils.dart';
 

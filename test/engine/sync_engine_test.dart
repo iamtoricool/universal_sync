@@ -25,8 +25,8 @@ class _TestEntity extends SyncEntity {
     this.version = 0,
     DateTime? createdAt,
     DateTime? updatedAt,
-    this.deletedAt,
-  }) : createdAt = createdAt ?? DateTime(2024),
+  }) : deletedAt = null,
+       createdAt = createdAt ?? DateTime(2024),
        updatedAt = updatedAt ?? DateTime(2024);
 
   @override

@@ -7,10 +7,15 @@ import 'package:universal_sync/universal_sync.dart';
 class MockRemoteAdapter extends Mock implements RemoteAdapter {}
 
 class _Product extends SyncEntity {
+  @override
   final String id;
+  @override
   final int version;
+  @override
   final DateTime createdAt;
+  @override
   final DateTime updatedAt;
+  @override
   final DateTime? deletedAt;
   final String name;
 

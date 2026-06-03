@@ -8,10 +8,15 @@ import 'package:universal_sync/src/engine/sync_engine.dart';
 class MockRemoteAdapter extends Mock implements RemoteAdapter {}
 
 class _Product extends SyncEntity {
+  @override
   final String id;
+  @override
   final int version;
+  @override
   final DateTime createdAt;
+  @override
   final DateTime updatedAt;
+  @override
   final DateTime? deletedAt;
   final String name;
 
@@ -42,10 +47,15 @@ class _Product extends SyncEntity {
 }
 
 class _Customer extends SyncEntity {
+  @override
   final String id;
+  @override
   final int version;
+  @override
   final DateTime createdAt;
+  @override
   final DateTime updatedAt;
+  @override
   final DateTime? deletedAt;
   final String email;
 

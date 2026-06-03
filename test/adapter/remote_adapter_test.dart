@@ -1,3 +1,5 @@
+// ignore_for_file: use_null_aware_elements
+
 import 'package:test/test.dart';
 import 'package:universal_sync/src/adapter/remote_adapter.dart';
 import 'package:universal_sync/src/model/sync_queue_entry.dart';
