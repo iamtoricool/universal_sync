@@ -9,6 +9,8 @@ import 'todos/providers.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const ProviderScope(child: TodoApp()));
+
+  // Test
 }
 
 class TodoApp extends ConsumerStatefulWidget {
