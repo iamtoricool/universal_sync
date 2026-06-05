@@ -3,91 +3,24 @@ import 'dart:convert';
 import 'package:test/test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:universal_sync/universal_sync.dart';
-
-class MockRemoteAdapter extends Mock implements RemoteAdapter {}
-
-class _Product extends SyncEntity {
-  @override
-  final String id;
-  @override
-  final int version;
-  @override
-  final DateTime createdAt;
-  @override
-  final DateTime updatedAt;
-  @override
-  final DateTime? deletedAt;
-  final String name;
-
-  _Product({
-    required this.id,
-    this.version = 0,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-    this.name = '',
-  }) : deletedAt = null,
-       createdAt = createdAt ?? DateTime(2024),
-       updatedAt = updatedAt ?? DateTime(2024);
-
-  @override
-  Map<String, dynamic> toSyncJson() => {
-    'id': id,
-    'version': version,
-    'createdAt': createdAt.toIso8601String(),
-    'updatedAt': updatedAt.toIso8601String(),
-    'name': name,
-  };
-
-  factory _Product.fromJson(Map<String, dynamic> json) => _Product(
-    id: json['id'] as String,
-    version: json['version'] as int? ?? 0,
-    name: json['name'] as String? ?? '',
-  );
-}
-
-class _Customer extends SyncEntity {
-  @override
-  final String id;
-  @override
-  final int version;
-  @override
-  final DateTime createdAt;
-  @override
-  final DateTime updatedAt;
-  @override
-  final DateTime? deletedAt;
-  final String email;
-
-  _Customer({
-    required this.id,
-    this.version = 0,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-    this.email = '',
-  }) : deletedAt = null,
-       createdAt = createdAt ?? DateTime(2024),
-       updatedAt = updatedAt ?? DateTime(2024);
-
-  @override
-  Map<String, dynamic> toSyncJson() => {
-    'id': id,
-    'version': version,
-    'createdAt': createdAt.toIso8601String(),
-    'updatedAt': updatedAt.toIso8601String(),
-    'email': email,
-  };
-
-  factory _Customer.fromJson(Map<String, dynamic> json) => _Customer(
-    id: json['id'] as String,
-    version: json['version'] as int? ?? 0,
-    email: json['email'] as String? ?? '',
-  );
-}
+import '../shared/mocks.dart';
+import '../shared/test_entities.dart';
 
 void main() {
   setUpAll(() {
     registerFallbackValue(PushRequest([]));
     registerFallbackValue(PullRequest(entityType: '', sinceSequence: 0));
+  });
+
+  final engines = <SyncEngine>[];
+
+  tearDown(() {
+    for (final e in engines) {
+      try {
+        e.dispose();
+      } catch (_) {}
+    }
+    engines.clear();
   });
 
   group('Full sync cycle', () {
@@ -96,13 +29,11 @@ void main() {
       final mockRemote = MockRemoteAdapter();
 
       await localAdapter.enqueue(
-        SyncQueueEntry(
+        SyncQueueEntry<Product>(
           id: 'q1',
           idempotencyKey: 'q1',
-          entityType: '_Product',
-          entityId: 'p1',
+          data: Product(id: 'p1', version: 0, name: 'Widget'),
           operation: SyncOperation.insert,
-          payload: jsonEncode({'id': 'p1', 'version': 0, 'name': 'Widget'}),
           version: 0,
           localSequence: 0,
           createdAt: DateTime(2024),
@@ -123,9 +54,13 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [_Product], batchSize: 10),
-        entityFromJson: {_Product: _Product.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+          batchSize: 10,
+        ),
       );
+      engines.add(engine);
 
       final result = await engine.sync();
 
@@ -134,7 +69,7 @@ void main() {
       expect(result.failed, 0);
       expect(result.conflicted, 0);
       expect(result.isClean, isTrue);
-      expect(localAdapter.entities['_Product']?['p1']?['version'], 1);
+      expect(localAdapter.entities['Product']?['p1']?['version'], 1);
     });
 
     test('multi-entity sync cycle with ordering', () async {
@@ -142,13 +77,11 @@ void main() {
       final mockRemote = MockRemoteAdapter();
 
       await localAdapter.enqueue(
-        SyncQueueEntry(
+        SyncQueueEntry<Product>(
           id: 'q1',
           idempotencyKey: 'q1',
-          entityType: '_Product',
-          entityId: 'p1',
+          data: Product(id: 'p1', version: 0, name: 'Widget'),
           operation: SyncOperation.insert,
-          payload: jsonEncode({'id': 'p1', 'version': 0, 'name': 'Widget'}),
           version: 0,
           localSequence: 0,
           createdAt: DateTime(2024),
@@ -156,13 +89,11 @@ void main() {
       );
 
       await localAdapter.enqueue(
-        SyncQueueEntry(
+        SyncQueueEntry<Customer>(
           id: 'q2',
           idempotencyKey: 'q2',
-          entityType: '_Customer',
-          entityId: 'c1',
+          data: Customer(id: 'c1', version: 0, email: 'test@test.com'),
           operation: SyncOperation.insert,
-          payload: jsonEncode({'id': 'c1', 'version': 0, 'email': 'test@test.com'}),
           version: 0,
           localSequence: 1,
           createdAt: DateTime(2024),
@@ -183,19 +114,23 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [_Product, _Customer], batchSize: 10),
-        entityFromJson: {
-          _Product: _Product.fromJson,
-          _Customer: _Customer.fromJson,
-        },
+        config: SyncConfig(
+          entityOrder: {0: Product, 1: Customer},
+          entityFromJson: {
+            entityTypeName(Product): Product.fromJson,
+            entityTypeName(Customer): Customer.fromJson,
+          },
+          batchSize: 10,
+        ),
       );
+      engines.add(engine);
 
       final result = await engine.sync();
 
       expect(result.pushed, 2);
       expect(result.isClean, isTrue);
-      expect(localAdapter.entities['_Product']?['p1'], isNotNull);
-      expect(localAdapter.entities['_Customer']?['c1'], isNotNull);
+      expect(localAdapter.entities['Product']?['p1'], isNotNull);
+      expect(localAdapter.entities['Customer']?['c1'], isNotNull);
     });
 
     test('conflict resolution with ServerWins', () async {
@@ -203,13 +138,11 @@ void main() {
       final mockRemote = MockRemoteAdapter();
 
       await localAdapter.enqueue(
-        SyncQueueEntry(
+        SyncQueueEntry<Product>(
           id: 'q1',
           idempotencyKey: 'q1',
-          entityType: '_Product',
-          entityId: 'p1',
+          data: Product(id: 'p1', version: 0, name: 'local'),
           operation: SyncOperation.insert,
-          payload: jsonEncode({'id': 'p1', 'version': 0, 'name': 'local'}),
           version: 0,
           localSequence: 0,
           createdAt: DateTime(2024),
@@ -232,16 +165,20 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [_Product], batchSize: 10),
-        entityFromJson: {_Product: _Product.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+          batchSize: 10,
+        ),
       );
+      engines.add(engine);
 
       final result = await engine.sync();
 
       expect(result.pushed, 0);
-      expect(localAdapter.entities['_Product']?['p1']?['name'], 'remote');
-      expect(localAdapter.entities['_Product']?['p1']?['version'], 1);
-      final pending = await localAdapter.fetchPendingEntries('_Product', 10);
+      expect(localAdapter.entities['Product']?['p1']?['name'], 'remote');
+      expect(localAdapter.entities['Product']?['p1']?['version'], 1);
+      final pending = await localAdapter.fetchPendingEntries('Product', 10);
       expect(pending, isEmpty);
     });
 
@@ -250,13 +187,11 @@ void main() {
       final mockRemote = MockRemoteAdapter();
 
       await localAdapter.enqueue(
-        SyncQueueEntry(
+        SyncQueueEntry<Product>(
           id: 'q1',
           idempotencyKey: 'q1',
-          entityType: '_Product',
-          entityId: 'p1',
+          data: Product(id: 'p1', version: 0, name: 'Widget'),
           operation: SyncOperation.insert,
-          payload: jsonEncode({'id': 'p1', 'version': 0, 'name': 'Widget'}),
           version: 0,
           localSequence: 0,
           createdAt: DateTime(2024),
@@ -281,9 +216,13 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [_Product], batchSize: 10),
-        entityFromJson: {_Product: _Product.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+          batchSize: 10,
+        ),
       );
+      engines.add(engine);
 
       try {
         await engine.sync();
@@ -292,7 +231,7 @@ void main() {
         // Expected - network error causes first sync to fail
       }
 
-      final pending = await localAdapter.fetchPendingEntries('_Product', 10);
+      final pending = await localAdapter.fetchPendingEntries('Product', 10);
       expect(pending.length, 1);
 
       final result = await engine.sync();
@@ -308,7 +247,7 @@ void main() {
         (invocation) async => PullResponse(
           operations: [
             RemoteOperation(
-              entityType: '_Product',
+              entityType: 'Product',
               entityId: 'p1',
               operation: SyncOperation.insert,
               payload: {'id': 'p1', 'version': 1, 'name': 'from server'},
@@ -322,16 +261,20 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [_Product], batchSize: 10),
-        entityFromJson: {_Product: _Product.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+          batchSize: 10,
+        ),
       );
+      engines.add(engine);
 
       final result = await engine.pull();
 
       expect(result.pulled, 1);
-      expect(localAdapter.entities['_Product']?['p1']?['name'], 'from server');
+      expect(localAdapter.entities['Product']?['p1']?['name'], 'from server');
 
-      final cp = await localAdapter.readCheckpoint('_Product');
+      final cp = await localAdapter.readCheckpoint('Product');
       expect(cp, isNotNull);
       expect(cp!.lastServerSequence, 1);
     });
@@ -340,15 +283,13 @@ void main() {
       final localAdapter = InMemoryLocalAdapter();
       final mockRemote = MockRemoteAdapter();
 
-      await localAdapter.upsertEntity('_Product', {'id': 'p1', 'version': 1, 'name': 'Old'});
+      await localAdapter.upsertEntity('Product', {'id': 'p1', 'version': 1, 'name': 'Old'});
       await localAdapter.enqueue(
-        SyncQueueEntry(
+        SyncQueueEntry<Product>(
           id: 'q1',
           idempotencyKey: 'q1',
-          entityType: '_Product',
-          entityId: 'p1',
+          data: Product(id: 'p1', version: 1, name: 'Updated'),
           operation: SyncOperation.update,
-          payload: jsonEncode({'id': 'p1', 'version': 1, 'name': 'Updated'}),
           version: 1,
           localSequence: 0,
           createdAt: DateTime(2024),
@@ -368,9 +309,13 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [_Product], batchSize: 10),
-        entityFromJson: {_Product: _Product.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+          batchSize: 10,
+        ),
       );
+      engines.add(engine);
 
       final result = await engine.sync();
       expect(result.pushed, 1);
@@ -381,15 +326,13 @@ void main() {
       final localAdapter = InMemoryLocalAdapter();
       final mockRemote = MockRemoteAdapter();
 
-      await localAdapter.upsertEntity('_Product', {'id': 'p1', 'version': 1, 'name': 'Gone'});
+      await localAdapter.upsertEntity('Product', {'id': 'p1', 'version': 1, 'name': 'Gone'});
       await localAdapter.enqueue(
-        SyncQueueEntry(
+        SyncQueueEntry<Product>(
           id: 'q1',
           idempotencyKey: 'q1',
-          entityType: '_Product',
-          entityId: 'p1',
+          data: Product(id: 'p1', version: 1),
           operation: SyncOperation.delete,
-          payload: jsonEncode({'id': 'p1', 'version': 1}),
           version: 1,
           localSequence: 0,
           createdAt: DateTime(2024),
@@ -409,9 +352,13 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [_Product], batchSize: 10),
-        entityFromJson: {_Product: _Product.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+          batchSize: 10,
+        ),
       );
+      engines.add(engine);
 
       final result = await engine.sync();
       expect(result.pushed, 1);
@@ -422,13 +369,13 @@ void main() {
       final localAdapter = InMemoryLocalAdapter();
       final mockRemote = MockRemoteAdapter();
 
-      await localAdapter.upsertEntity('_Product', {'id': 'p1', 'version': 1, 'name': 'Local'});
+      await localAdapter.upsertEntity('Product', {'id': 'p1', 'version': 1, 'name': 'Local'});
 
       when(() => mockRemote.pull(any())).thenAnswer(
         (_) async => PullResponse(
           operations: [
             RemoteOperation(
-              entityType: '_Product',
+              entityType: 'Product',
               entityId: 'p1',
               operation: SyncOperation.update,
               payload: {'id': 'p1', 'version': 2, 'name': 'Remote updated'},
@@ -442,26 +389,30 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [_Product], batchSize: 10),
-        entityFromJson: {_Product: _Product.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+          batchSize: 10,
+        ),
       );
+      engines.add(engine);
 
       await engine.pull();
-      expect(localAdapter.entities['_Product']?['p1']?['name'], 'Remote updated');
-      expect(localAdapter.entities['_Product']?['p1']?['version'], 2);
+      expect(localAdapter.entities['Product']?['p1']?['name'], 'Remote updated');
+      expect(localAdapter.entities['Product']?['p1']?['version'], 2);
     });
 
     test('remote delete soft-deletes local entity on pull', () async {
       final localAdapter = InMemoryLocalAdapter();
       final mockRemote = MockRemoteAdapter();
 
-      await localAdapter.upsertEntity('_Product', {'id': 'p1', 'version': 1, 'name': 'ToDelete'});
+      await localAdapter.upsertEntity('Product', {'id': 'p1', 'version': 1, 'name': 'ToDelete'});
 
       when(() => mockRemote.pull(any())).thenAnswer(
         (_) async => PullResponse(
           operations: [
             RemoteOperation(
-              entityType: '_Product',
+              entityType: 'Product',
               entityId: 'p1',
               operation: SyncOperation.delete,
               payload: {},
@@ -475,12 +426,16 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [_Product], batchSize: 10),
-        entityFromJson: {_Product: _Product.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+          batchSize: 10,
+        ),
       );
+      engines.add(engine);
 
       await engine.pull();
-      expect(localAdapter.entities['_Product']?['p1']?['deletedAt'], isNotNull);
+      expect(localAdapter.entities['Product']?['p1']?['deletedAt'], isNotNull);
     });
 
     test('second pull uses updated checkpoint', () async {
@@ -496,9 +451,13 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [_Product], batchSize: 10),
-        entityFromJson: {_Product: _Product.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+          batchSize: 10,
+        ),
       );
+      engines.add(engine);
 
       await engine.pull();
       await engine.pull();
@@ -511,15 +470,13 @@ void main() {
       final localAdapter = InMemoryLocalAdapter();
       final mockRemote = MockRemoteAdapter();
 
-      await localAdapter.upsertEntity('_Product', {'id': 'p1', 'version': 0, 'name': 'Local'});
+      await localAdapter.upsertEntity('Product', {'id': 'p1', 'version': 0, 'name': 'Local'});
       await localAdapter.enqueue(
-        SyncQueueEntry(
+        SyncQueueEntry<Product>(
           id: 'q1',
           idempotencyKey: 'q1',
-          entityType: '_Product',
-          entityId: 'p1',
+          data: Product(id: 'p1', version: 0, name: 'Local'),
           operation: SyncOperation.insert,
-          payload: jsonEncode({'id': 'p1', 'version': 0, 'name': 'Local'}),
           version: 0,
           localSequence: 0,
           createdAt: DateTime(2024),
@@ -542,17 +499,18 @@ void main() {
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
         config: SyncConfig(
-          entityOrder: [_Product],
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
           batchSize: 10,
+          resolvers: {entityTypeName(Product): clientWinsResolver},
         ),
-        entityFromJson: {_Product: _Product.fromJson},
-        resolvers: {_Product: ClientWinsResolver<SyncEntity>()},
       );
+      engines.add(engine);
 
       final result = await engine.sync();
       expect(result.conflicted, 1);
-      expect(localAdapter.entities['_Product']?['p1']?['name'], 'Local');
-      final pending = await localAdapter.fetchPendingEntries('_Product', 10);
+      expect(localAdapter.entities['Product']?['p1']?['name'], 'Local');
+      final pending = await localAdapter.fetchPendingEntries('Product', 10);
       expect(pending, isEmpty);
     });
 
@@ -561,13 +519,11 @@ void main() {
       final mockRemote = MockRemoteAdapter();
 
       await localAdapter.enqueue(
-        SyncQueueEntry(
+        SyncQueueEntry<Product>(
           id: 'q1',
           idempotencyKey: 'q1',
-          entityType: '_Product',
-          entityId: 'p1',
+          data: Product(id: 'p1', version: 0),
           operation: SyncOperation.insert,
-          payload: jsonEncode({'id': 'p1', 'version': 0}),
           version: 0,
           localSequence: 0,
           createdAt: DateTime(2024),
@@ -584,9 +540,13 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [_Product], batchSize: 10),
-        entityFromJson: {_Product: _Product.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+          batchSize: 10,
+        ),
       );
+      engines.add(engine);
 
       final phases = <SyncPhase>[];
       final sub = engine.state.listen((s) {
@@ -605,11 +565,11 @@ void main() {
 
       when(() => mockRemote.pull(any())).thenAnswer((invocation) async {
         final request = invocation.positionalArguments[0] as PullRequest;
-        if (request.entityType == '_Product') {
+        if (request.entityType == 'Product') {
           return PullResponse(
             operations: [
               RemoteOperation(
-                entityType: '_Product',
+                entityType: 'Product',
                 entityId: 'p1',
                 operation: SyncOperation.insert,
                 payload: {'id': 'p1', 'version': 1, 'name': 'Prod'},
@@ -622,7 +582,7 @@ void main() {
         return PullResponse(
           operations: [
             RemoteOperation(
-              entityType: '_Customer',
+              entityType: 'Customer',
               entityId: 'c1',
               operation: SyncOperation.insert,
               payload: {'id': 'c1', 'version': 1, 'email': 'cust@test.com'},
@@ -636,14 +596,21 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [_Product, _Customer], batchSize: 10),
-        entityFromJson: {_Product: _Product.fromJson, _Customer: _Customer.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Product, 1: Customer},
+          entityFromJson: {
+            entityTypeName(Product): Product.fromJson,
+            entityTypeName(Customer): Customer.fromJson,
+          },
+          batchSize: 10,
+        ),
       );
+      engines.add(engine);
 
       final result = await engine.pull();
       expect(result.pulled, 2);
-      expect(localAdapter.entities['_Product']?['p1']?['name'], 'Prod');
-      expect(localAdapter.entities['_Customer']?['c1']?['email'], 'cust@test.com');
+      expect(localAdapter.entities['Product']?['p1']?['name'], 'Prod');
+      expect(localAdapter.entities['Customer']?['c1']?['email'], 'cust@test.com');
     });
   });
 }

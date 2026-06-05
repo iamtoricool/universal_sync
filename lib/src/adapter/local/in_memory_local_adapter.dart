@@ -1,10 +1,11 @@
+import '../../model/sync_entity.dart';
 import '../../model/sync_queue_entry.dart';
 import '../../model/sync_checkpoint.dart';
 import '../local_adapter.dart';
 
 class InMemoryLocalAdapter implements LocalAdapter {
   final _entities = <String, Map<String, Map<String, dynamic>>>{};
-  final _queue = <SyncQueueEntry>[];
+  final _queue = <SyncQueueEntry<SyncEntity>>[];
   final _checkpoints = <String, SyncCheckpoint>{};
   int _sequence = 0;
 
@@ -14,7 +15,7 @@ class InMemoryLocalAdapter implements LocalAdapter {
   }
 
   @override
-  Future<void> enqueue(SyncQueueEntry entry) async {
+  Future<void> enqueue<T extends SyncEntity>(SyncQueueEntry<T> entry) async {
     _queue.add(entry);
   }
 
@@ -32,7 +33,7 @@ class InMemoryLocalAdapter implements LocalAdapter {
   }
 
   @override
-  Future<List<SyncQueueEntry>> fetchPendingEntries(String entityType, int limit) async {
+  Future<List<SyncQueueEntry<SyncEntity>>> fetchPendingEntries(String entityType, int limit) async {
     final entries = _queue.where((e) => e.entityType == entityType && e.status == SyncEntryStatus.pending).toList();
     entries.sort((a, b) => a.localSequence.compareTo(b.localSequence));
     return entries.take(limit).toList();

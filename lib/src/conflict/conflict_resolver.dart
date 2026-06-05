@@ -2,9 +2,9 @@ import 'package:universal_sync/universal_sync.dart';
 
 enum ConflictStrategy { acceptRemote, acceptLocal, merge }
 
-class ConflictContext<T extends SyncEntity> {
-  final T local;
-  final T remote;
+class ConflictContext {
+  final SyncEntity local;
+  final SyncEntity remote;
   final SyncOperation operation;
 
   const ConflictContext({
@@ -14,24 +14,45 @@ class ConflictContext<T extends SyncEntity> {
   });
 }
 
-class ConflictResolution<T extends SyncEntity> {
+class ConflictResolution {
   final ConflictStrategy strategy;
-  final T entity;
+  final SyncEntity entity;
 
   const ConflictResolution._({
     required this.strategy,
     required this.entity,
   });
 
-  factory ConflictResolution.acceptRemote(T entity) =>
-      ConflictResolution._(strategy: ConflictStrategy.acceptRemote, entity: entity);
-
-  factory ConflictResolution.acceptLocal(T entity) =>
+  factory ConflictResolution.acceptLocal(SyncEntity entity) =>
       ConflictResolution._(strategy: ConflictStrategy.acceptLocal, entity: entity);
 
-  factory ConflictResolution.merge(T entity) => ConflictResolution._(strategy: ConflictStrategy.merge, entity: entity);
+  factory ConflictResolution.acceptRemote(SyncEntity entity) =>
+      ConflictResolution._(strategy: ConflictStrategy.acceptRemote, entity: entity);
+
+  factory ConflictResolution.merge(SyncEntity entity) =>
+      ConflictResolution._(strategy: ConflictStrategy.merge, entity: entity);
 }
 
-abstract class ConflictResolver<T extends SyncEntity> {
-  ConflictResolution<T> resolve(ConflictContext<T> context);
+abstract class ConflictResolver {
+  ConflictResolution resolve(ConflictContext context);
 }
+
+class _SimpleResolver implements ConflictResolver {
+  final ConflictStrategy strategy;
+  const _SimpleResolver(this.strategy);
+
+  @override
+  ConflictResolution resolve(ConflictContext context) {
+    switch (strategy) {
+      case ConflictStrategy.acceptRemote:
+        return ConflictResolution.acceptRemote(context.remote);
+      case ConflictStrategy.acceptLocal:
+        return ConflictResolution.acceptLocal(context.local);
+      case ConflictStrategy.merge:
+        throw UnimplementedError('Merge strategy requires a custom resolver');
+    }
+  }
+}
+
+const ConflictResolver serverWinsResolver = _SimpleResolver(ConflictStrategy.acceptRemote);
+const ConflictResolver clientWinsResolver = _SimpleResolver(ConflictStrategy.acceptLocal);

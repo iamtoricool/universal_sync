@@ -1,18 +1,42 @@
 import 'package:test/test.dart';
-import 'package:universal_sync/src/model/sync_queue_entry.dart';
+import 'package:universal_sync/universal_sync.dart';
+
+class _TestEntity extends SyncEntity {
+  @override
+  final String id;
+  @override
+  final int version;
+  @override
+  final DateTime createdAt;
+  @override
+  final DateTime updatedAt;
+  @override
+  final DateTime? deletedAt;
+
+  _TestEntity({
+    required this.id,
+    this.version = 0,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) : deletedAt = null,
+       createdAt = createdAt ?? DateTime(2024),
+       updatedAt = updatedAt ?? DateTime(2024);
+
+  @override
+  Map<String, dynamic> toSyncJson() => {'id': id, 'version': version};
+}
 
 void main() {
   group('SyncQueueEntry', () {
     final now = DateTime(2024);
+    final testEntity = _TestEntity(id: 'n1', version: 1);
 
     test('constructor assigns all fields correctly', () {
-      final entry = SyncQueueEntry(
+      final entry = SyncQueueEntry<_TestEntity>(
         id: '1',
         idempotencyKey: '1',
-        entityType: 'note',
-        entityId: 'n1',
+        data: testEntity,
         operation: SyncOperation.insert,
-        payload: '{"title":"hello"}',
         version: 1,
         localSequence: 10,
         status: SyncEntryStatus.pending,
@@ -22,10 +46,10 @@ void main() {
 
       expect(entry.id, '1');
       expect(entry.idempotencyKey, '1');
-      expect(entry.entityType, 'note');
+      expect(entry.entityType, '_TestEntity');
       expect(entry.entityId, 'n1');
       expect(entry.operation, SyncOperation.insert);
-      expect(entry.payload, '{"title":"hello"}');
+      expect(entry.data.id, 'n1');
       expect(entry.version, 1);
       expect(entry.localSequence, 10);
       expect(entry.status, SyncEntryStatus.pending);
@@ -34,13 +58,11 @@ void main() {
     });
 
     test('constructor defaults are applied correctly', () {
-      final entry = SyncQueueEntry(
+      final entry = SyncQueueEntry<_TestEntity>(
         id: '2',
         idempotencyKey: '2',
-        entityType: 'note',
-        entityId: 'n2',
+        data: _TestEntity(id: 'n2'),
         operation: SyncOperation.update,
-        payload: '{}',
         version: 0,
         localSequence: 0,
         createdAt: now,
@@ -51,13 +73,11 @@ void main() {
     });
 
     test('copyWith preserves unset fields', () {
-      final entry = SyncQueueEntry(
+      final entry = SyncQueueEntry<_TestEntity>(
         id: '3',
         idempotencyKey: '3',
-        entityType: 'note',
-        entityId: 'n3',
+        data: _TestEntity(id: 'n3'),
         operation: SyncOperation.delete,
-        payload: '{"id":"n3"}',
         version: 2,
         localSequence: 20,
         createdAt: now,
@@ -70,7 +90,7 @@ void main() {
       expect(copied.entityType, entry.entityType);
       expect(copied.entityId, entry.entityId);
       expect(copied.operation, entry.operation);
-      expect(copied.payload, entry.payload);
+      expect(copied.data.id, entry.data.id);
       expect(copied.version, entry.version);
       expect(copied.localSequence, entry.localSequence);
       expect(copied.status, entry.status);
@@ -79,26 +99,25 @@ void main() {
     });
 
     test('copyWith overrides set fields', () {
-      final entry = SyncQueueEntry(
+      final entry = SyncQueueEntry<_TestEntity>(
         id: '4',
         idempotencyKey: '4',
-        entityType: 'note',
-        entityId: 'n4',
+        data: _TestEntity(id: 'n4'),
         operation: SyncOperation.insert,
-        payload: 'old',
         version: 1,
         localSequence: 30,
         createdAt: now,
       );
 
+      final newEntity = _TestEntity(id: 'n4', version: 2);
       final newTime = DateTime(2025);
       final copied = entry.copyWith(
-        payload: 'new',
+        data: newEntity,
         version: 2,
         syncedAt: newTime,
       );
 
-      expect(copied.payload, 'new');
+      expect(copied.data.version, 2);
       expect(copied.version, 2);
       expect(copied.syncedAt, newTime);
       expect(copied.id, entry.id);
@@ -106,67 +125,50 @@ void main() {
     });
 
     test('copyWith with explicit null clears nullable fields', () {
-      final entry = SyncQueueEntry(
+      final entry = SyncQueueEntry<_TestEntity>(
         id: '5',
         idempotencyKey: '5',
-        entityType: 'note',
-        entityId: 'n5',
+        data: _TestEntity(id: 'n5'),
         operation: SyncOperation.update,
-        payload: '{}',
         version: 3,
         localSequence: 40,
         createdAt: now,
         syncedAt: now,
       );
 
-      final copied = entry.copyWith(
-        syncedAt: null,
-      );
-
+      final copied = entry.copyWith(syncedAt: null);
       expect(copied.syncedAt, isNull);
     });
 
     test('SyncOperation contains all expected values', () {
       expect(
         SyncOperation.values,
-        containsAll([
-          SyncOperation.insert,
-          SyncOperation.update,
-          SyncOperation.delete,
-        ]),
+        containsAll([SyncOperation.insert, SyncOperation.update, SyncOperation.delete]),
       );
     });
 
     test('SyncEntryStatus contains all expected values', () {
       expect(
         SyncEntryStatus.values,
-        containsAll([
-          SyncEntryStatus.pending,
-          SyncEntryStatus.synced,
-          SyncEntryStatus.failed,
-        ]),
+        containsAll([SyncEntryStatus.pending, SyncEntryStatus.synced, SyncEntryStatus.failed]),
       );
     });
 
     test('identical entries have matching fields', () {
-      final a = SyncQueueEntry(
+      final a = SyncQueueEntry<_TestEntity>(
         id: 'e1',
         idempotencyKey: 'e1',
-        entityType: 't',
-        entityId: '1',
+        data: _TestEntity(id: '1'),
         operation: SyncOperation.insert,
-        payload: '{}',
         version: 0,
         localSequence: 0,
         createdAt: now,
       );
-      final b = SyncQueueEntry(
+      final b = SyncQueueEntry<_TestEntity>(
         id: 'e1',
         idempotencyKey: 'e1',
-        entityType: 't',
-        entityId: '1',
+        data: _TestEntity(id: '1'),
         operation: SyncOperation.insert,
-        payload: '{}',
         version: 0,
         localSequence: 0,
         createdAt: now,
@@ -177,24 +179,20 @@ void main() {
     });
 
     test('entries with different ids are distinct references', () {
-      final a = SyncQueueEntry(
+      final a = SyncQueueEntry<_TestEntity>(
         id: 'e1',
         idempotencyKey: 'e1',
-        entityType: 't',
-        entityId: '1',
+        data: _TestEntity(id: '1'),
         operation: SyncOperation.insert,
-        payload: '{}',
         version: 0,
         localSequence: 0,
         createdAt: now,
       );
-      final b = SyncQueueEntry(
+      final b = SyncQueueEntry<_TestEntity>(
         id: 'e2',
         idempotencyKey: 'e2',
-        entityType: 't',
-        entityId: '1',
+        data: _TestEntity(id: '1'),
         operation: SyncOperation.insert,
-        payload: '{}',
         version: 0,
         localSequence: 0,
         createdAt: now,

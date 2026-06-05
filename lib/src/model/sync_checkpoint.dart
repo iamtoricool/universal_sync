@@ -1,8 +1,4 @@
-const _unset = _Unset();
-
-class _Unset {
-  const _Unset();
-}
+import 'package:universal_sync/src/internal/sentinel.dart';
 
 class SyncCheckpoint {
   final String id;
@@ -21,13 +17,13 @@ class SyncCheckpoint {
     String? id,
     String? entityType,
     int? lastServerSequence,
-    Object? lastSyncedAt = _unset,
+    Object? lastSyncedAt = sentinel,
   }) {
     return SyncCheckpoint(
       id: id ?? this.id,
       entityType: entityType ?? this.entityType,
       lastServerSequence: lastServerSequence ?? this.lastServerSequence,
-      lastSyncedAt: identical(lastSyncedAt, _unset) ? this.lastSyncedAt : lastSyncedAt as DateTime?,
+      lastSyncedAt: identical(lastSyncedAt, sentinel) ? this.lastSyncedAt : lastSyncedAt as DateTime?,
     );
   }
 }

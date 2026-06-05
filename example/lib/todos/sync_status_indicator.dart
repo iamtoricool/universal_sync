@@ -17,7 +17,7 @@ class SyncStatusIndicator extends ConsumerWidget {
     return switch (syncState) {
       SyncIdle() => _idleBanner(context, syncState, pending),
       SyncInProgress() => _progressBanner(context, syncState),
-      SyncError() => _errorBanner(context, syncState, pending),
+      SyncError() => _errorBanner(context, ref, syncState, pending),
       null => const SizedBox(),
     };
   }
@@ -44,13 +44,32 @@ class SyncStatusIndicator extends ConsumerWidget {
     );
   }
 
-  Widget _errorBanner(BuildContext context, SyncError state, int pending) {
+  Widget _errorBanner(
+    BuildContext context,
+    WidgetRef ref,
+    SyncError state,
+    int pending,
+  ) {
     final msg = state.error.toString();
-    final truncated = msg.length > 80 ? '${msg.substring(0, 80)}...' : msg;
+    final truncated = msg.length > 40 ? '${msg.substring(0, 40)}...' : msg;
     final text = pending > 0
         ? 'Sync failed: $truncated ($pending pending)'
         : 'Sync failed: $truncated';
-    return _banner(context, Colors.red, text);
+    return _banner(
+      context,
+      Colors.red,
+      text,
+      trailing: TextButton(
+        onPressed: () {
+          final engine = ref.read(syncEngineProvider).valueOrNull;
+          engine?.sync();
+        },
+        child: const Text(
+          'Retry',
+          style: TextStyle(color: Colors.red, fontSize: 12),
+        ),
+      ),
+    );
   }
 
   Widget _banner(
@@ -58,6 +77,7 @@ class SyncStatusIndicator extends ConsumerWidget {
     Color color,
     String text, {
     Widget? leading,
+    Widget? trailing,
   }) {
     return Container(
       width: double.infinity,
@@ -69,6 +89,7 @@ class SyncStatusIndicator extends ConsumerWidget {
           Expanded(
             child: Text(text, style: TextStyle(color: color, fontSize: 13)),
           ),
+          ?trailing,
         ],
       ),
     );

@@ -127,12 +127,12 @@ class HomePage extends ConsumerWidget {
 
   Future<void> _signOut(WidgetRef ref) async {
     try {
-      final sync = await ref.read(universalSyncProvider.future);
-      sync.dispose();
+      final engine = await ref.read(syncEngineProvider.future);
+      engine.dispose();
     } catch (_) {}
     final adapter = ref.read(adapterProvider);
     adapter.reset();
-    ref.invalidate(universalSyncProvider);
+    ref.invalidate(syncEngineProvider);
     ref.invalidate(adapterProvider);
     ref.invalidate(todoListProvider);
     ref.invalidate(pendingCountProvider);

@@ -33,7 +33,7 @@ void main() {
     test('stores local, remote, and operation', () {
       final local = _TestEntity(id: '1', name: 'local');
       final remote = _TestEntity(id: '1', name: 'remote');
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: local,
         remote: remote,
         operation: SyncOperation.update,
@@ -76,7 +76,7 @@ void main() {
       final resolver = _MergeResolver();
       final local = _TestEntity(id: '1', name: 'local');
       final remote = _TestEntity(id: '1', name: 'remote');
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: local,
         remote: remote,
         operation: SyncOperation.update,
@@ -84,14 +84,14 @@ void main() {
 
       final resolution = resolver.resolve(context);
       expect(resolution.strategy, ConflictStrategy.merge);
-      expect(resolution.entity.name, 'local-remote');
+      expect((resolution.entity as _TestEntity).name, 'local-remote');
     });
 
     test('merged entity preserves selected fields from each side', () {
       final resolver = _MergeResolver();
       final local = _TestEntity(id: '1', name: 'A');
       final remote = _TestEntity(id: '1', name: 'B');
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: local,
         remote: remote,
         operation: SyncOperation.update,
@@ -99,147 +99,137 @@ void main() {
 
       final resolution = resolver.resolve(context);
       expect(resolution.strategy, ConflictStrategy.merge);
-      expect(resolution.entity.name, 'A-B');
+      expect((resolution.entity as _TestEntity).name, 'A-B');
     });
   });
 
   group('ServerWinsResolver', () {
     test('returns acceptRemote strategy', () {
-      final resolver = ServerWinsResolver<_TestEntity>();
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: _TestEntity(id: '1', name: 'local'),
         remote: _TestEntity(id: '1', name: 'remote'),
         operation: SyncOperation.update,
       );
-      expect(resolver.resolve(context).strategy, ConflictStrategy.acceptRemote);
+      expect(serverWinsResolver.resolve(context).strategy, ConflictStrategy.acceptRemote);
     });
 
     test('returns the remote entity', () {
-      final resolver = ServerWinsResolver<_TestEntity>();
       final remote = _TestEntity(id: '1', name: 'remote');
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: _TestEntity(id: '1', name: 'local'),
         remote: remote,
         operation: SyncOperation.update,
       );
-      expect(resolver.resolve(context).entity, same(remote));
+      expect(serverWinsResolver.resolve(context).entity, same(remote));
     });
 
     test('ignores the local entity', () {
-      final resolver = ServerWinsResolver<_TestEntity>();
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: _TestEntity(id: '1', name: 'local', createdAt: DateTime(2023)),
         remote: _TestEntity(id: '1', name: 'remote', createdAt: DateTime(2024)),
         operation: SyncOperation.update,
       );
-      final resolution = resolver.resolve(context);
-      expect(resolution.entity.name, 'remote');
+      final resolution = serverWinsResolver.resolve(context);
+      expect((resolution.entity as _TestEntity).name, 'remote');
       expect(resolution.entity.createdAt, DateTime(2024));
     });
 
     test('works for insert operation', () {
-      final resolver = ServerWinsResolver<_TestEntity>();
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: _TestEntity(id: '1', name: 'local'),
         remote: _TestEntity(id: '1', name: 'remote'),
         operation: SyncOperation.insert,
       );
-      expect(resolver.resolve(context).strategy, ConflictStrategy.acceptRemote);
+      expect(serverWinsResolver.resolve(context).strategy, ConflictStrategy.acceptRemote);
     });
 
     test('works for update operation', () {
-      final resolver = ServerWinsResolver<_TestEntity>();
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: _TestEntity(id: '1', name: 'local'),
         remote: _TestEntity(id: '1', name: 'remote'),
         operation: SyncOperation.update,
       );
-      expect(resolver.resolve(context).strategy, ConflictStrategy.acceptRemote);
+      expect(serverWinsResolver.resolve(context).strategy, ConflictStrategy.acceptRemote);
     });
 
     test('works for delete operation', () {
-      final resolver = ServerWinsResolver<_TestEntity>();
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: _TestEntity(id: '1', name: 'local'),
         remote: _TestEntity(id: '1', name: 'remote'),
         operation: SyncOperation.delete,
       );
-      expect(resolver.resolve(context).strategy, ConflictStrategy.acceptRemote);
+      expect(serverWinsResolver.resolve(context).strategy, ConflictStrategy.acceptRemote);
     });
   });
 
   group('ClientWinsResolver', () {
     test('returns acceptLocal strategy', () {
-      final resolver = ClientWinsResolver<_TestEntity>();
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: _TestEntity(id: '1', name: 'local'),
         remote: _TestEntity(id: '1', name: 'remote'),
         operation: SyncOperation.update,
       );
-      expect(resolver.resolve(context).strategy, ConflictStrategy.acceptLocal);
+      expect(clientWinsResolver.resolve(context).strategy, ConflictStrategy.acceptLocal);
     });
 
     test('returns the local entity', () {
-      final resolver = ClientWinsResolver<_TestEntity>();
       final local = _TestEntity(id: '1', name: 'local');
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: local,
         remote: _TestEntity(id: '1', name: 'remote'),
         operation: SyncOperation.update,
       );
-      expect(resolver.resolve(context).entity, same(local));
+      expect(clientWinsResolver.resolve(context).entity, same(local));
     });
 
     test('ignores the remote entity', () {
-      final resolver = ClientWinsResolver<_TestEntity>();
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: _TestEntity(id: '1', name: 'local', createdAt: DateTime(2023)),
         remote: _TestEntity(id: '1', name: 'remote', createdAt: DateTime(2024)),
         operation: SyncOperation.update,
       );
-      final resolution = resolver.resolve(context);
-      expect(resolution.entity.name, 'local');
+      final resolution = clientWinsResolver.resolve(context);
+      expect((resolution.entity as _TestEntity).name, 'local');
       expect(resolution.entity.createdAt, DateTime(2023));
     });
 
     test('works for insert operation', () {
-      final resolver = ClientWinsResolver<_TestEntity>();
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: _TestEntity(id: '1', name: 'local'),
         remote: _TestEntity(id: '1', name: 'remote'),
         operation: SyncOperation.insert,
       );
-      expect(resolver.resolve(context).strategy, ConflictStrategy.acceptLocal);
+      expect(clientWinsResolver.resolve(context).strategy, ConflictStrategy.acceptLocal);
     });
 
     test('works for update operation', () {
-      final resolver = ClientWinsResolver<_TestEntity>();
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: _TestEntity(id: '1', name: 'local'),
         remote: _TestEntity(id: '1', name: 'remote'),
         operation: SyncOperation.update,
       );
-      expect(resolver.resolve(context).strategy, ConflictStrategy.acceptLocal);
+      expect(clientWinsResolver.resolve(context).strategy, ConflictStrategy.acceptLocal);
     });
 
     test('works for delete operation', () {
-      final resolver = ClientWinsResolver<_TestEntity>();
-      final context = ConflictContext<_TestEntity>(
+      final context = ConflictContext(
         local: _TestEntity(id: '1', name: 'local'),
         remote: _TestEntity(id: '1', name: 'remote'),
         operation: SyncOperation.delete,
       );
-      expect(resolver.resolve(context).strategy, ConflictStrategy.acceptLocal);
+      expect(clientWinsResolver.resolve(context).strategy, ConflictStrategy.acceptLocal);
     });
   });
 }
 
-class _MergeResolver implements ConflictResolver<_TestEntity> {
+class _MergeResolver implements ConflictResolver {
   @override
-  ConflictResolution<_TestEntity> resolve(ConflictContext<_TestEntity> context) {
+  ConflictResolution resolve(ConflictContext context) {
+    final local = context.local as _TestEntity;
+    final remote = context.remote as _TestEntity;
     final merged = _TestEntity(
-      id: context.local.id,
-      name: '${context.local.name}-${context.remote.name}',
+      id: local.id,
+      name: '${local.name}-${remote.name}',
     );
     return ConflictResolution.merge(merged);
   }

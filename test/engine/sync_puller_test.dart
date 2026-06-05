@@ -1,16 +1,19 @@
 import 'package:test/test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:universal_sync/universal_sync.dart';
+import '../shared/mocks.dart';
 
-class MockRemoteAdapter extends Mock implements RemoteAdapter {}
-
-SyncConfig singleConfig() => SyncConfig(entityOrder: [String]);
-SyncConfig multiConfig() => SyncConfig(entityOrder: [String, int]);
-
-Map<Type, SyncEntity Function(Map<String, dynamic>)> fromJson = {
-  String: (_) => throw UnimplementedError('not used in puller tests'),
-  int: (_) => throw UnimplementedError('not used in puller tests'),
-};
+SyncConfig singleConfig() => SyncConfig(
+  entityOrder: {0: String},
+  entityFromJson: {'String': (_) => throw UnimplementedError('not used in puller tests')},
+);
+SyncConfig multiConfig() => SyncConfig(
+  entityOrder: {0: String, 1: int},
+  entityFromJson: {
+    'String': (_) => throw UnimplementedError('not used in puller tests'),
+    'int': (_) => throw UnimplementedError('not used in puller tests'),
+  },
+);
 
 RemoteOperation _op({
   required SyncOperation operation,
@@ -43,30 +46,17 @@ void main() {
     remoteAdapter = MockRemoteAdapter();
   });
 
-  group('PullResult', () {
-    test('defaults to pulled=0', () {
-      expect(const PullResult().pulled, 0);
-    });
-
-    test('operator + sums pulled counts', () {
-      final a = PullResult(pulled: 3);
-      final b = PullResult(pulled: 7);
-      expect((a + b).pulled, 10);
-    });
-  });
-
   group('empty pull response', () {
-    test('updates checkpoint and returns PullResult(pulled: 0)', () async {
+    test('updates checkpoint and returns SyncResult(pulled: 0)', () async {
       when(() => remoteAdapter.pull(any())).thenAnswer((_) async => PullResponse(operations: [], latestSequence: 5));
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      final result = await puller.run();
+      final result = await engine.pull();
 
       expect(result.pulled, 0);
       final cp = await localAdapter.readCheckpoint('String');
@@ -77,14 +67,13 @@ void main() {
     test('creates checkpoint when no existing checkpoint and no operations', () async {
       when(() => remoteAdapter.pull(any())).thenAnswer((_) async => PullResponse(operations: [], latestSequence: 0));
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run();
+      await engine.pull();
 
       final cp = await localAdapter.readCheckpoint('String');
       expect(cp, isNotNull);
@@ -107,14 +96,13 @@ void main() {
         ),
       );
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      final result = await puller.run();
+      final result = await engine.pull();
 
       expect(result.pulled, 1);
       final cp = await localAdapter.readCheckpoint('String');
@@ -139,14 +127,13 @@ void main() {
         ),
       );
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      final result = await puller.run();
+      final result = await engine.pull();
 
       expect(result.pulled, 1);
       expect(localAdapter.entities['String']?['1'], {'id': '1', 'name': 'updated'});
@@ -170,14 +157,13 @@ void main() {
         ),
       );
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      final result = await puller.run();
+      final result = await engine.pull();
 
       expect(result.pulled, 1);
       expect(
@@ -196,14 +182,13 @@ void main() {
         return PullResponse(operations: [], latestSequence: 0);
       });
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: multiConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run();
+      await engine.pull();
       expect(calls, ['String', 'int']);
     });
 
@@ -221,14 +206,13 @@ void main() {
         ),
       );
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: multiConfig(),
-        entityFromJson: fromJson,
       );
 
-      final result = await puller.run();
+      final result = await engine.pull();
       expect(result.pulled, 2);
     });
   });
@@ -241,14 +225,13 @@ void main() {
         return PullResponse(operations: [], latestSequence: 0);
       });
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run();
+      await engine.pull();
       expect(captured!.sinceSequence, 0);
     });
   });
@@ -269,14 +252,13 @@ void main() {
         return PullResponse(operations: [], latestSequence: 10);
       });
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run();
+      await engine.pull();
       expect(captured!.sinceSequence, 10);
     });
   });
@@ -296,14 +278,13 @@ void main() {
         ),
       );
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run();
+      await engine.pull();
 
       expect(await localAdapter.fetchPendingEntries('String', 10), isEmpty);
       verifyNever(() => remoteAdapter.push(any()));
@@ -336,18 +317,20 @@ void main() {
       );
 
       final calls = <List<int>>[];
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run(
-        onProgress: (processed, total) {
-          calls.add([processed, total]);
-        },
-      );
+      final sub = engine.state.listen((s) {
+        if (s is SyncInProgress && s.phase == SyncPhase.pulling && s.processed > 0) {
+          calls.add([s.processed, s.total]);
+        }
+      });
+
+      await engine.pull();
+      await sub.cancel();
 
       expect(calls, [
         [1, 3],
@@ -359,7 +342,7 @@ void main() {
 
   group('cancellation', () {
     test('stops after current entity type when cancelled', () async {
-      final callCount = {};
+      final callCount = <String, int>{};
 
       when(() => remoteAdapter.pull(any())).thenAnswer((invocation) async {
         final request = invocation.positionalArguments[0] as PullRequest;
@@ -376,20 +359,20 @@ void main() {
         );
       });
 
-      var checked = 0;
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: multiConfig(),
-        entityFromJson: fromJson,
       );
 
-      final result = await puller.run(
-        isCancelled: () async {
-          checked++;
-          return checked > 1;
-        },
-      );
+      final sub = engine.state.listen((s) {
+        if (s is SyncInProgress && s.phase == SyncPhase.pulling && s.processed > 0) {
+          engine.cancel();
+        }
+      });
+
+      final result = await engine.pull();
+      await sub.cancel();
 
       expect(callCount.containsKey('int'), false);
       expect(await localAdapter.readCheckpoint('String'), isNotNull);
@@ -426,21 +409,17 @@ void main() {
         ),
       );
 
-      final applied = <int>[];
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run(
-        onProgress: (processed, total) {
-          applied.add(localAdapter.entities['String']!.length);
-        },
-      );
+      await engine.pull();
 
-      expect(applied, [1, 2, 3]);
+      expect(localAdapter.entities['String']?['1']?['seq'], 1);
+      expect(localAdapter.entities['String']?['3']?['seq'], 2);
+      expect(localAdapter.entities['String']?['2']?['seq'], 3);
     });
   });
 
@@ -456,14 +435,13 @@ void main() {
 
       when(() => remoteAdapter.pull(any())).thenAnswer((_) async => PullResponse(operations: [], latestSequence: 5));
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run();
+      await engine.pull();
 
       final cp = await localAdapter.readCheckpoint('String');
       expect(cp!.lastSyncedAt, isNull);
@@ -487,14 +465,13 @@ void main() {
         ),
       );
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      final result = await puller.run();
+      final result = await engine.pull();
       expect(result.pulled, 1);
       expect(localAdapter.entities['String']?['1'], isNotNull);
     });
@@ -508,14 +485,13 @@ void main() {
 
       when(() => remoteAdapter.pull(any())).thenThrow(Exception('network'));
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await expectLater(puller.run(), throwsA(isA<Exception>()));
+      await expectLater(engine.pull(), throwsA(isA<Exception>()));
 
       final cp = await localAdapter.readCheckpoint('String');
       expect(cp!.lastServerSequence, 10);
@@ -533,14 +509,13 @@ void main() {
         ),
       );
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run();
+      await engine.pull();
       expect(await localAdapter.fetchPendingEntries('String', 10), isEmpty);
     });
 
@@ -554,14 +529,13 @@ void main() {
         ),
       );
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run();
+      await engine.pull();
       expect(localAdapter.entities['String']?['99'], isNotNull);
     });
 
@@ -575,14 +549,13 @@ void main() {
         ),
       );
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await expectLater(puller.run(), completes);
+      await expectLater(engine.pull(), completes);
     });
   });
 
@@ -597,14 +570,13 @@ void main() {
         ),
       );
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run();
+      await engine.pull();
       final cp = await localAdapter.readCheckpoint('String');
       expect(cp!.lastSyncedAt, isNotNull);
     });
@@ -619,14 +591,13 @@ void main() {
         ),
       );
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run();
+      await engine.pull();
       final cp1 = await localAdapter.readCheckpoint('String');
 
       when(() => remoteAdapter.pull(any())).thenAnswer(
@@ -639,7 +610,7 @@ void main() {
       );
 
       await Future.delayed(Duration(milliseconds: 1));
-      await puller.run();
+      await engine.pull();
       final cp2 = await localAdapter.readCheckpoint('String');
       expect(cp2!.lastSyncedAt!.isAfter(cp1!.lastSyncedAt!), isTrue);
     });
@@ -660,14 +631,13 @@ void main() {
         ),
       );
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run();
+      await engine.pull();
       final stored = localAdapter.entities['String']?['f1'];
       expect(stored?['value'], 42);
       expect(stored?['active'], isTrue);
@@ -696,14 +666,13 @@ void main() {
         ),
       );
 
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run();
+      await engine.pull();
       expect(localAdapter.entities['String']?['s1']?['value'], 99);
     });
   });
@@ -722,18 +691,20 @@ void main() {
       );
 
       final progress = <int>[];
-      final puller = SyncPuller(
+      final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: remoteAdapter,
         config: singleConfig(),
-        entityFromJson: fromJson,
       );
 
-      await puller.run(
-        onProgress: (processed, total) {
-          progress.add(processed);
-        },
-      );
+      final sub = engine.state.listen((s) {
+        if (s is SyncInProgress && s.phase == SyncPhase.pulling && s.processed > 0) {
+          progress.add(s.processed);
+        }
+      });
+
+      await engine.pull();
+      await sub.cancel();
 
       expect(progress, [1, 2, 3]);
     });

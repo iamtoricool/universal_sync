@@ -8,11 +8,6 @@ void main() {
       expect(s.lastSyncedAt, isNull);
     });
 
-    test('stores lastSyncedAt', () {
-      const s = SyncIdle();
-      expect(s.lastSyncedAt, isNull);
-    });
-
     test('equality checks match same values', () {
       const a = SyncIdle();
       const b = SyncIdle();

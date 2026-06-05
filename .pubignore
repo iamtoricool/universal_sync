@@ -1,7 +1,6 @@
 # Internal docs
 ai_docs/
 AGENTS.md
-SERVER_CONTRACT.md
 
 # Coverage reports
 coverage/

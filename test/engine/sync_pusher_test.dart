@@ -1,115 +1,32 @@
-import 'dart:convert';
+import 'dart:async';
 
 import 'package:test/test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:universal_sync/universal_sync.dart';
+import '../shared/mocks.dart';
+import '../shared/test_entities.dart';
 
-class MockRemoteAdapter extends Mock implements RemoteAdapter {}
-
-class _Customer extends SyncEntity {
-  @override
-  final String id;
-  @override
-  final int version;
-  @override
-  final DateTime createdAt;
-  @override
-  final DateTime updatedAt;
-  @override
-  final DateTime? deletedAt;
-  final String email;
-
-  _Customer({
-    required this.id,
-    this.version = 0,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-    this.email = '',
-  }) : deletedAt = null,
-       createdAt = createdAt ?? DateTime(2024),
-       updatedAt = updatedAt ?? DateTime(2024);
-
-  @override
-  Map<String, dynamic> toSyncJson() => {
-    'id': id,
-    'version': version,
-    'createdAt': createdAt.toIso8601String(),
-    'updatedAt': updatedAt.toIso8601String(),
-    'email': email,
-  };
-
-  factory _Customer.fromJson(Map<String, dynamic> json) => _Customer(
-    id: json['id'] as String,
-    version: json['version'] as int? ?? 0,
-    email: json['email'] as String? ?? '',
-  );
-}
-
-class _Product extends SyncEntity {
-  @override
-  final String id;
-  @override
-  final int version;
-  @override
-  final DateTime createdAt;
-  @override
-  final DateTime updatedAt;
-  @override
-  final DateTime? deletedAt;
-  final String name;
-
-  _Product({
-    required this.id,
-    this.version = 0,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-    this.name = '',
-  }) : deletedAt = null,
-       createdAt = createdAt ?? DateTime(2024),
-       updatedAt = updatedAt ?? DateTime(2024);
-
-  @override
-  Map<String, dynamic> toSyncJson() => {
-    'id': id,
-    'version': version,
-    'createdAt': createdAt.toIso8601String(),
-    'updatedAt': updatedAt.toIso8601String(),
-    'name': name,
-  };
-
-  factory _Product.fromJson(Map<String, dynamic> json) => _Product(
-    id: json['id'] as String,
-    version: json['version'] as int? ?? 0,
-    name: json['name'] as String? ?? '',
-  );
-}
-
-class _MergeEntityResolver implements ConflictResolver<SyncEntity> {
+class _MergeEntityResolver implements ConflictResolver {
   const _MergeEntityResolver();
 
   @override
-  ConflictResolution<SyncEntity> resolve(ConflictContext<SyncEntity> context) {
+  ConflictResolution resolve(ConflictContext context) {
     return ConflictResolution.merge(context.local);
   }
 }
 
-SyncQueueEntry _entry({
+SyncQueueEntry<T> _entry<T extends SyncEntity>({
   required String id,
-  required String entityId,
-  String entityType = '_Product',
-  int version = 0,
-  String? payload,
+  required T data,
   SyncOperation operation = SyncOperation.insert,
   int localSequence = 0,
 }) {
-  return SyncQueueEntry(
+  return SyncQueueEntry<T>(
     id: id,
     idempotencyKey: id,
-    entityType: entityType,
-    entityId: entityId,
+    data: data,
     operation: operation,
-    payload: payload ?? jsonEncode({'id': entityId, 'version': version}),
-    version: version,
+    version: data.version,
     localSequence: localSequence,
     createdAt: DateTime(2024),
   );
@@ -120,19 +37,21 @@ void main() {
     registerFallbackValue(PushRequest([]));
   });
 
-  group('SyncPusher', () {
+  group('SyncPusher (via SyncEngine)', () {
     test('returns empty result when queue is empty', () async {
       final adapter = InMemoryLocalAdapter();
       final mock = MockRemoteAdapter();
-      final config = SyncConfig(entityOrder: [_Product]);
-      final pusher = SyncPusher(
+      final config = SyncConfig(
+        entityOrder: {0: Product},
+        entityFromJson: {entityTypeName(Product): Product.fromJson},
+      );
+      final engine = SyncEngine(
         localAdapter: adapter,
         remoteAdapter: mock,
         config: config,
-        entityFromJson: {_Product: _Product.fromJson},
       );
 
-      final result = await pusher.run();
+      final result = await engine.push();
 
       expect(result.pushed, 0);
       expect(result.failed, 0);
@@ -143,9 +62,17 @@ void main() {
     test('handles single accepted entry', () async {
       final adapter = InMemoryLocalAdapter();
       final mock = MockRemoteAdapter();
-      final config = SyncConfig(entityOrder: [_Product]);
+      final config = SyncConfig(
+        entityOrder: {0: Product},
+        entityFromJson: {entityTypeName(Product): Product.fromJson},
+      );
 
-      await adapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await adapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: Product(id: 'p1'),
+        ),
+      );
 
       when(() => mock.push(any())).thenAnswer(
         (_) async => PushResponse([
@@ -153,21 +80,20 @@ void main() {
         ]),
       );
 
-      final pusher = SyncPusher(
+      final engine = SyncEngine(
         localAdapter: adapter,
         remoteAdapter: mock,
         config: config,
-        entityFromJson: {_Product: _Product.fromJson},
       );
 
-      final result = await pusher.run();
+      final result = await engine.push();
 
       expect(result.pushed, 1);
       expect(result.failed, 0);
       expect(result.conflicted, 0);
       verify(() => mock.push(any())).called(1);
       expect(
-        (await adapter.fetchPendingEntries('_Product', 10)),
+        (await adapter.fetchPendingEntries('Product', 10)),
         isEmpty,
       );
     });
@@ -175,10 +101,25 @@ void main() {
     test('handles multiple accepted entries', () async {
       final adapter = InMemoryLocalAdapter();
       final mock = MockRemoteAdapter();
-      final config = SyncConfig(entityOrder: [_Product]);
+      final config = SyncConfig(
+        entityOrder: {0: Product},
+        entityFromJson: {entityTypeName(Product): Product.fromJson},
+      );
 
-      await adapter.enqueue(_entry(id: 'e1', entityId: 'p1', localSequence: 0));
-      await adapter.enqueue(_entry(id: 'e2', entityId: 'p2', localSequence: 1));
+      await adapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: Product(id: 'p1'),
+          localSequence: 0,
+        ),
+      );
+      await adapter.enqueue(
+        _entry(
+          id: 'e2',
+          data: Product(id: 'p2'),
+          localSequence: 1,
+        ),
+      );
 
       when(() => mock.push(any())).thenAnswer(
         (_) async => PushResponse([
@@ -187,14 +128,13 @@ void main() {
         ]),
       );
 
-      final pusher = SyncPusher(
+      final engine = SyncEngine(
         localAdapter: adapter,
         remoteAdapter: mock,
         config: config,
-        entityFromJson: {_Product: _Product.fromJson},
       );
 
-      final result = await pusher.run();
+      final result = await engine.push();
 
       expect(result.pushed, 2);
       expect(result.failed, 0);
@@ -205,13 +145,15 @@ void main() {
     test('uses ServerWins on conflict', () async {
       final adapter = InMemoryLocalAdapter();
       final mock = MockRemoteAdapter();
-      final config = SyncConfig(entityOrder: [_Product]);
+      final config = SyncConfig(
+        entityOrder: {0: Product},
+        entityFromJson: {entityTypeName(Product): Product.fromJson},
+      );
 
       await adapter.enqueue(
         _entry(
           id: 'e1',
-          entityId: 'p1',
-          payload: jsonEncode({'id': 'p1', 'version': 0, 'name': 'local'}),
+          data: Product(id: 'p1', version: 0, name: 'local'),
         ),
       );
 
@@ -224,20 +166,19 @@ void main() {
         ]),
       );
 
-      final pusher = SyncPusher(
+      final engine = SyncEngine(
         localAdapter: adapter,
         remoteAdapter: mock,
         config: config,
-        entityFromJson: {_Product: _Product.fromJson},
       );
 
-      final result = await pusher.run();
+      final result = await engine.push();
 
       expect(result.pushed, 0);
       expect(result.failed, 0);
       expect(result.conflicted, 1);
       expect(
-        (await adapter.fetchPendingEntries('_Product', 10)),
+        (await adapter.fetchPendingEntries('Product', 10)),
         isEmpty,
       );
     });
@@ -246,11 +187,17 @@ void main() {
       final adapter = InMemoryLocalAdapter();
       final mock = MockRemoteAdapter();
       final config = SyncConfig(
-        entityOrder: [_Product],
-        resolvers: {_Product: ClientWinsResolver<SyncEntity>()},
+        entityOrder: {0: Product},
+        entityFromJson: {entityTypeName(Product): Product.fromJson},
+        resolvers: {entityTypeName(Product): clientWinsResolver},
       );
 
-      await adapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await adapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: Product(id: 'p1'),
+        ),
+      );
 
       when(() => mock.push(any())).thenAnswer(
         (_) async => PushResponse([
@@ -261,21 +208,20 @@ void main() {
         ]),
       );
 
-      final pusher = SyncPusher(
+      final engine = SyncEngine(
         localAdapter: adapter,
         remoteAdapter: mock,
         config: config,
-        entityFromJson: {_Product: _Product.fromJson},
       );
 
-      final result = await pusher.run();
+      final result = await engine.push();
 
       expect(result.pushed, 0);
       expect(result.failed, 0);
       expect(result.conflicted, 1);
       verify(() => mock.push(any())).called(1);
       expect(
-        (await adapter.fetchPendingEntries('_Product', 10)),
+        (await adapter.fetchPendingEntries('Product', 10)),
         isEmpty,
       );
     });
@@ -283,13 +229,16 @@ void main() {
     test('handles merge resolution', () async {
       final adapter = InMemoryLocalAdapter();
       final mock = MockRemoteAdapter();
-      final config = SyncConfig(entityOrder: [_Product]);
+      final config = SyncConfig(
+        entityOrder: {0: Product},
+        entityFromJson: {entityTypeName(Product): Product.fromJson},
+        resolvers: {entityTypeName(Product): _MergeEntityResolver()},
+      );
 
       await adapter.enqueue(
         _entry(
           id: 'e1',
-          entityId: 'p1',
-          payload: jsonEncode({'id': 'p1', 'version': 0, 'name': 'local'}),
+          data: Product(id: 'p1', version: 0, name: 'local'),
         ),
       );
 
@@ -309,22 +258,20 @@ void main() {
         ]);
       });
 
-      final pusher = SyncPusher(
+      final engine = SyncEngine(
         localAdapter: adapter,
         remoteAdapter: mock,
         config: config,
-        entityFromJson: {_Product: _Product.fromJson},
-        resolvers: {_Product: _MergeEntityResolver()},
       );
 
-      final result = await pusher.run();
+      final result = await engine.push();
 
       expect(result.pushed, 1);
       expect(result.failed, 0);
       expect(result.conflicted, 1);
       verify(() => mock.push(any())).called(2);
       expect(
-        (await adapter.fetchPendingEntries('_Product', 10)),
+        (await adapter.fetchPendingEntries('Product', 10)),
         isEmpty,
       );
     });
@@ -332,9 +279,17 @@ void main() {
     test('marks rejected entry as failed', () async {
       final adapter = InMemoryLocalAdapter();
       final mock = MockRemoteAdapter();
-      final config = SyncConfig(entityOrder: [_Product]);
+      final config = SyncConfig(
+        entityOrder: {0: Product},
+        entityFromJson: {entityTypeName(Product): Product.fromJson},
+      );
 
-      await adapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await adapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: Product(id: 'p1'),
+        ),
+      );
 
       when(() => mock.push(any())).thenAnswer(
         (_) async => PushResponse([
@@ -342,20 +297,19 @@ void main() {
         ]),
       );
 
-      final pusher = SyncPusher(
+      final engine = SyncEngine(
         localAdapter: adapter,
         remoteAdapter: mock,
         config: config,
-        entityFromJson: {_Product: _Product.fromJson},
       );
 
-      final result = await pusher.run();
+      final result = await engine.push();
 
       expect(result.pushed, 0);
       expect(result.failed, 1);
       expect(result.conflicted, 0);
       expect(
-        (await adapter.fetchPendingEntries('_Product', 10)),
+        (await adapter.fetchPendingEntries('Product', 10)),
         isEmpty,
       );
     });
@@ -363,22 +317,29 @@ void main() {
     test('keeps entries pending on adapter error', () async {
       final adapter = InMemoryLocalAdapter();
       final mock = MockRemoteAdapter();
-      final config = SyncConfig(entityOrder: [_Product]);
+      final config = SyncConfig(
+        entityOrder: {0: Product},
+        entityFromJson: {entityTypeName(Product): Product.fromJson},
+      );
 
-      await adapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await adapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: Product(id: 'p1'),
+        ),
+      );
 
       when(() => mock.push(any())).thenThrow(Exception('Network error'));
 
-      final pusher = SyncPusher(
+      final engine = SyncEngine(
         localAdapter: adapter,
         remoteAdapter: mock,
         config: config,
-        entityFromJson: {_Product: _Product.fromJson},
       );
 
-      await expectLater(pusher.run(), throwsA(isA<Exception>()));
+      await expectLater(engine.push(), throwsA(isA<Exception>()));
 
-      final pending = await adapter.fetchPendingEntries('_Product', 10);
+      final pending = await adapter.fetchPendingEntries('Product', 10);
       expect(pending.length, 1);
       expect(pending[0].id, 'e1');
     });
@@ -386,10 +347,25 @@ void main() {
     test('calls progress callback with correct counts', () async {
       final adapter = InMemoryLocalAdapter();
       final mock = MockRemoteAdapter();
-      final config = SyncConfig(entityOrder: [_Product]);
+      final config = SyncConfig(
+        entityOrder: {0: Product},
+        entityFromJson: {entityTypeName(Product): Product.fromJson},
+      );
 
-      await adapter.enqueue(_entry(id: 'e1', entityId: 'p1', localSequence: 0));
-      await adapter.enqueue(_entry(id: 'e2', entityId: 'p2', localSequence: 1));
+      await adapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: Product(id: 'p1'),
+          localSequence: 0,
+        ),
+      );
+      await adapter.enqueue(
+        _entry(
+          id: 'e2',
+          data: Product(id: 'p2'),
+          localSequence: 1,
+        ),
+      );
 
       when(() => mock.push(any())).thenAnswer(
         (_) async => PushResponse([
@@ -398,17 +374,20 @@ void main() {
         ]),
       );
 
-      final pusher = SyncPusher(
+      final engine = SyncEngine(
         localAdapter: adapter,
         remoteAdapter: mock,
         config: config,
-        entityFromJson: {_Product: _Product.fromJson},
       );
 
       final progressCalls = <List<int>>[];
-      final result = await pusher.run(
-        onProgress: (processed, total) => progressCalls.add([processed, total]),
-      );
+      final sub = engine.state.listen((s) {
+        if (s is SyncInProgress && s.phase == SyncPhase.pushing && s.processed > 0) {
+          progressCalls.add([s.processed, s.total]);
+        }
+      });
+      final result = await engine.push();
+      await sub.cancel();
 
       expect(result.pushed, 2);
       expect(progressCalls, [
@@ -420,32 +399,45 @@ void main() {
     test('stops processing when cancelled', () async {
       final adapter = InMemoryLocalAdapter();
       final mock = MockRemoteAdapter();
-      final config = SyncConfig(entityOrder: [_Product], batchSize: 1);
-
-      await adapter.enqueue(_entry(id: 'e1', entityId: 'p1', localSequence: 0));
-      await adapter.enqueue(_entry(id: 'e2', entityId: 'p2', localSequence: 1));
-
-      when(() => mock.push(any())).thenAnswer(
-        (_) async => PushResponse([
-          SyncEntryResult.accepted(entryId: 'e1', serverSequence: 1),
-        ]),
+      final config = SyncConfig(
+        entityOrder: {0: Product},
+        entityFromJson: {entityTypeName(Product): Product.fromJson},
+        batchSize: 1,
       );
 
-      var cancel = false;
-      final pusher = SyncPusher(
+      await adapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: Product(id: 'p1'),
+          localSequence: 0,
+        ),
+      );
+      await adapter.enqueue(
+        _entry(
+          id: 'e2',
+          data: Product(id: 'p2'),
+          localSequence: 1,
+        ),
+      );
+
+      final gate = Completer<void>();
+      when(() => mock.push(any())).thenAnswer((_) async {
+        await gate.future;
+        return PushResponse([
+          SyncEntryResult.accepted(entryId: 'e1', serverSequence: 1),
+        ]);
+      });
+
+      final engine = SyncEngine(
         localAdapter: adapter,
         remoteAdapter: mock,
         config: config,
-        entityFromJson: {_Product: _Product.fromJson},
       );
 
-      final result = await pusher.run(
-        isCancelled: () async {
-          if (cancel) return true;
-          cancel = true;
-          return false;
-        },
-      );
+      final pushFuture = engine.push();
+      engine.cancel();
+      gate.complete();
+      final result = await pushFuture;
 
       expect(result.pushed, 1);
       expect(result.failed, 0);
@@ -456,11 +448,19 @@ void main() {
       test('pushes entries in batches of config.batchSize', () async {
         final adapter = InMemoryLocalAdapter();
         final mock = MockRemoteAdapter();
-        final config = SyncConfig(entityOrder: [_Product], batchSize: 2);
+        final config = SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+          batchSize: 2,
+        );
 
         for (int i = 0; i < 5; i++) {
           await adapter.enqueue(
-            _entry(id: 'e$i', entityId: 'p$i', localSequence: i),
+            _entry(
+              id: 'e$i',
+              data: Product(id: 'p$i'),
+              localSequence: i,
+            ),
           );
         }
 
@@ -473,14 +473,13 @@ void main() {
           );
         });
 
-        final pusher = SyncPusher(
+        final engine = SyncEngine(
           localAdapter: adapter,
           remoteAdapter: mock,
           config: config,
-          entityFromJson: {_Product: _Product.fromJson},
         );
 
-        final result = await pusher.run();
+        final result = await engine.push();
         expect(result.pushed, 5);
         expect(batchSizes, [2, 2, 1]);
         verify(() => mock.push(any())).called(3);
@@ -489,11 +488,19 @@ void main() {
       test('processes all entries across multiple batches', () async {
         final adapter = InMemoryLocalAdapter();
         final mock = MockRemoteAdapter();
-        final config = SyncConfig(entityOrder: [_Product], batchSize: 3);
+        final config = SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+          batchSize: 3,
+        );
 
         for (int i = 0; i < 7; i++) {
           await adapter.enqueue(
-            _entry(id: 'e$i', entityId: 'p$i', localSequence: i),
+            _entry(
+              id: 'e$i',
+              data: Product(id: 'p$i'),
+              localSequence: i,
+            ),
           );
         }
 
@@ -504,14 +511,13 @@ void main() {
           );
         });
 
-        final pusher = SyncPusher(
+        final engine = SyncEngine(
           localAdapter: adapter,
           remoteAdapter: mock,
           config: config,
-          entityFromJson: {_Product: _Product.fromJson},
         );
 
-        final result = await pusher.run();
+        final result = await engine.push();
         expect(result.pushed, 7);
       });
     });
@@ -520,13 +526,27 @@ void main() {
       test('pushes entries in entityOrder sequence', () async {
         final adapter = InMemoryLocalAdapter();
         final mock = MockRemoteAdapter();
-        final config = SyncConfig(entityOrder: [_Product, _Customer]);
+        final config = SyncConfig(
+          entityOrder: {0: Product, 1: Customer},
+          entityFromJson: {
+            entityTypeName(Product): Product.fromJson,
+            entityTypeName(Customer): Customer.fromJson,
+          },
+        );
 
         await adapter.enqueue(
-          _entry(id: 'e1', entityId: 'p1', entityType: '_Product', localSequence: 2),
+          _entry(
+            id: 'e1',
+            data: Product(id: 'p1'),
+            localSequence: 2,
+          ),
         );
         await adapter.enqueue(
-          _entry(id: 'e2', entityId: 'c1', entityType: '_Customer', localSequence: 1),
+          _entry<Customer>(
+            id: 'e2',
+            data: Customer(id: 'c1'),
+            localSequence: 1,
+          ),
         );
 
         final pushedTypes = <String>[];
@@ -538,30 +558,37 @@ void main() {
           );
         });
 
-        final pusher = SyncPusher(
+        final engine = SyncEngine(
           localAdapter: adapter,
           remoteAdapter: mock,
           config: config,
-          entityFromJson: {
-            _Product: _Product.fromJson,
-            _Customer: _Customer.fromJson,
-          },
         );
 
-        await pusher.run();
-        expect(pushedTypes, ['_Product', '_Customer']);
+        await engine.push();
+        expect(pushedTypes, ['Product', 'Customer']);
       });
 
       test('does not push entries for entity type not in entityOrder', () async {
         final adapter = InMemoryLocalAdapter();
         final mock = MockRemoteAdapter();
-        final config = SyncConfig(entityOrder: [_Product]);
+        final config = SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+        );
 
         await adapter.enqueue(
-          _entry(id: 'e1', entityId: 'p1', entityType: '_Product', localSequence: 1),
+          _entry(
+            id: 'e1',
+            data: Product(id: 'p1'),
+            localSequence: 1,
+          ),
         );
         await adapter.enqueue(
-          _entry(id: 'e2', entityId: 'c1', entityType: '_Customer', localSequence: 2),
+          _entry<Customer>(
+            id: 'e2',
+            data: Customer(id: 'c1'),
+            localSequence: 2,
+          ),
         );
 
         final pushedTypes = <String>[];
@@ -573,15 +600,14 @@ void main() {
           );
         });
 
-        final pusher = SyncPusher(
+        final engine = SyncEngine(
           localAdapter: adapter,
           remoteAdapter: mock,
           config: config,
-          entityFromJson: {_Product: _Product.fromJson},
         );
 
-        await pusher.run();
-        expect(pushedTypes, ['_Product']);
+        await engine.push();
+        expect(pushedTypes, ['Product']);
       });
     });
 
@@ -589,13 +615,24 @@ void main() {
       test('entries pushed in localSequence ascending order', () async {
         final adapter = InMemoryLocalAdapter();
         final mock = MockRemoteAdapter();
-        final config = SyncConfig(entityOrder: [_Product]);
+        final config = SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+        );
 
         await adapter.enqueue(
-          _entry(id: 'e2', entityId: 'p2', localSequence: 2),
+          _entry(
+            id: 'e2',
+            data: Product(id: 'p2'),
+            localSequence: 2,
+          ),
         );
         await adapter.enqueue(
-          _entry(id: 'e1', entityId: 'p1', localSequence: 1),
+          _entry(
+            id: 'e1',
+            data: Product(id: 'p1'),
+            localSequence: 1,
+          ),
         );
 
         final order = <String>[];
@@ -607,56 +644,31 @@ void main() {
           );
         });
 
-        final pusher = SyncPusher(
+        final engine = SyncEngine(
           localAdapter: adapter,
           remoteAdapter: mock,
           config: config,
-          entityFromJson: {_Product: _Product.fromJson},
         );
 
-        await pusher.run();
+        await engine.push();
         expect(order, ['e1', 'e2']);
-      });
-
-      test('rejected entry increments failed count', () async {
-        final adapter = InMemoryLocalAdapter();
-        final mock = MockRemoteAdapter();
-        final config = SyncConfig(entityOrder: [_Product]);
-
-        await adapter.enqueue(
-          _entry(id: 'e1', entityId: 'p1'),
-        );
-
-        when(() => mock.push(any())).thenAnswer(
-          (_) async => PushResponse([
-            SyncEntryResult.rejected(entryId: 'e1', errorMessage: 'Conflict: version mismatch'),
-          ]),
-        );
-
-        final pusher = SyncPusher(
-          localAdapter: adapter,
-          remoteAdapter: mock,
-          config: config,
-          entityFromJson: {_Product: _Product.fromJson},
-        );
-
-        final result = await pusher.run();
-
-        expect(result.pushed, 0);
-        expect(result.failed, 1);
       });
 
       test('ClientWins preserves local data in the database', () async {
         final adapter = InMemoryLocalAdapter();
         final mock = MockRemoteAdapter();
         final config = SyncConfig(
-          entityOrder: [_Product],
-          resolvers: {_Product: ClientWinsResolver<SyncEntity>()},
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+          resolvers: {entityTypeName(Product): clientWinsResolver},
         );
 
-        await adapter.upsertEntity('_Product', {'id': 'p1', 'version': 2, 'name': 'Local'});
+        await adapter.upsertEntity('Product', {'id': 'p1', 'version': 2, 'name': 'Local'});
         await adapter.enqueue(
-          _entry(id: 'e1', entityId: 'p1', version: 2),
+          _entry(
+            id: 'e1',
+            data: Product(id: 'p1', version: 2),
+          ),
         );
 
         when(() => mock.push(any())).thenAnswer(
@@ -668,33 +680,39 @@ void main() {
           ]),
         );
 
-        // Check before push
-        expect(adapter.entities['_Product']?['p1']?['name'], 'Local');
+        expect(adapter.entities['Product']?['p1']?['name'], 'Local');
 
-        final pusher = SyncPusher(
+        final engine = SyncEngine(
           localAdapter: adapter,
           remoteAdapter: mock,
           config: config,
-          entityFromJson: {_Product: _Product.fromJson},
         );
 
-        final result = await pusher.run();
+        final result = await engine.push();
         expect(result.pushed, 0);
         expect(result.failed, 0);
         expect(result.conflicted, 1);
 
-        final stored = adapter.entities['_Product']?['p1'];
+        final stored = adapter.entities['Product']?['p1'];
         expect(stored?['name'], 'Local');
       });
 
       test('second batch is sent only after first batch is confirmed', () async {
         final adapter = InMemoryLocalAdapter();
         final mock = MockRemoteAdapter();
-        final config = SyncConfig(entityOrder: [_Product], batchSize: 2);
+        final config = SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+          batchSize: 2,
+        );
 
         for (int i = 0; i < 4; i++) {
           await adapter.enqueue(
-            _entry(id: 'e$i', entityId: 'p$i', localSequence: i),
+            _entry(
+              id: 'e$i',
+              data: Product(id: 'p$i'),
+              localSequence: i,
+            ),
           );
         }
 
@@ -707,52 +725,32 @@ void main() {
           );
         });
 
-        final pusher = SyncPusher(
+        final engine = SyncEngine(
           localAdapter: adapter,
           remoteAdapter: mock,
           config: config,
-          entityFromJson: {_Product: _Product.fromJson},
         );
 
-        await pusher.run();
+        await engine.push();
         expect(callOrder, [2, 2]);
         verify(() => mock.push(any())).called(2);
-      });
-
-      test('entry without fromJson handler is still marked synced', () async {
-        final adapter = InMemoryLocalAdapter();
-        final mock = MockRemoteAdapter();
-        final config = SyncConfig(entityOrder: [_Product]);
-
-        await adapter.enqueue(
-          _entry(id: 'e1', entityId: 'p1'),
-        );
-
-        when(() => mock.push(any())).thenAnswer(
-          (_) async => PushResponse([
-            SyncEntryResult.accepted(entryId: 'e1', serverSequence: 1),
-          ]),
-        );
-
-        final pusher = SyncPusher(
-          localAdapter: adapter,
-          remoteAdapter: mock,
-          config: config,
-          entityFromJson: {},
-        );
-
-        final result = await pusher.run();
-        expect(result.pushed, 1);
       });
 
       test('onProgress callback receives correct counts', () async {
         final adapter = InMemoryLocalAdapter();
         final mock = MockRemoteAdapter();
-        final config = SyncConfig(entityOrder: [_Product]);
+        final config = SyncConfig(
+          entityOrder: {0: Product},
+          entityFromJson: {entityTypeName(Product): Product.fromJson},
+        );
 
         for (int i = 0; i < 3; i++) {
           await adapter.enqueue(
-            _entry(id: 'e$i', entityId: 'p$i', localSequence: i),
+            _entry(
+              id: 'e$i',
+              data: Product(id: 'p$i'),
+              localSequence: i,
+            ),
           );
         }
 
@@ -765,39 +763,23 @@ void main() {
         );
 
         final progressValues = <int>[];
-        final pusher = SyncPusher(
+        final engine = SyncEngine(
           localAdapter: adapter,
           remoteAdapter: mock,
           config: config,
-          entityFromJson: {_Product: _Product.fromJson},
         );
 
-        await pusher.run(
-          onProgress: (processed, total) {
-            progressValues.add(processed);
-          },
-        );
+        final sub = engine.state.listen((s) {
+          if (s is SyncInProgress && s.phase == SyncPhase.pushing && s.processed > 0) {
+            progressValues.add(s.processed);
+          }
+        });
+
+        await engine.push();
+        await sub.cancel();
 
         expect(progressValues, [1, 2, 3]);
       });
-    });
-  });
-
-  group('PushResult', () {
-    test('defaults to zero', () {
-      const r = PushResult();
-      expect(r.pushed, 0);
-      expect(r.failed, 0);
-      expect(r.conflicted, 0);
-    });
-
-    test('operator + sums counts', () {
-      const a = PushResult(pushed: 1, failed: 2, conflicted: 3);
-      const b = PushResult(pushed: 4, failed: 5, conflicted: 6);
-      final c = a + b;
-      expect(c.pushed, 5);
-      expect(c.failed, 7);
-      expect(c.conflicted, 9);
     });
   });
 }

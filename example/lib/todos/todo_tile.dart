@@ -45,7 +45,8 @@ class TodoTile extends ConsumerWidget {
       subtitle: todo.description.isNotEmpty ? Text(todo.description) : null,
       trailing: IconButton(
         icon: const Icon(Icons.delete_outline),
-        onPressed: () => ref.read(todoListProvider.notifier).deleteTodo(todo),
+        onPressed: () =>
+            ref.read(todoListProvider.notifier).deleteTodo(todo.id),
       ),
       onTap: () => Navigator.push(
         context,

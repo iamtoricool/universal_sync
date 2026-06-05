@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:universal_sync/universal_sync.dart';
@@ -8,7 +6,7 @@ import 'package:example/todos/todo.dart';
 
 class MockRemoteAdapter extends Mock implements RemoteAdapter {}
 
-SyncQueueEntry todoEntry({
+SyncQueueEntry<Todo> todoEntry({
   required String id,
   required String entityId,
   required SyncOperation operation,
@@ -18,25 +16,23 @@ SyncQueueEntry todoEntry({
   bool isDone = false,
   String? idempotencyKey,
 }) {
-  final payload = {
-    'id': entityId,
-    'version': version,
-    'createdAt': DateTime(2024).toIso8601String(),
-    'updatedAt': DateTime(2024).toIso8601String(),
-    'title': title,
-    'description': '',
-    'isDone': isDone,
-  };
-  return SyncQueueEntry(
+  final now = DateTime(2024);
+  return SyncQueueEntry<Todo>(
     id: id,
-    entityType: 'Todo',
-    entityId: entityId,
+    idempotencyKey: idempotencyKey ?? id,
+    data: Todo(
+      id: entityId,
+      version: version,
+      createdAt: now,
+      updatedAt: now,
+      title: title,
+      description: '',
+      isDone: isDone,
+    ),
     operation: operation,
-    payload: jsonEncode(payload),
     version: version,
     localSequence: localSequence,
-    createdAt: DateTime(2024),
-    idempotencyKey: idempotencyKey ?? id,
+    createdAt: now,
   );
 }
 
@@ -98,8 +94,11 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [Todo], batchSize: 10),
-        entityFromJson: {Todo: Todo.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Todo},
+          batchSize: 10,
+          entityFromJson: {entityTypeName(Todo): Todo.fromJson},
+        ),
       );
 
       final result = await engine.sync();
@@ -141,8 +140,11 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [Todo], batchSize: 10),
-        entityFromJson: {Todo: Todo.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Todo},
+          batchSize: 10,
+          entityFromJson: {entityTypeName(Todo): Todo.fromJson},
+        ),
       );
 
       final result = await engine.pull();
@@ -197,9 +199,12 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [Todo], batchSize: 10),
-        entityFromJson: {Todo: Todo.fromJson},
-        resolvers: {Todo: ServerWinsResolver<SyncEntity>()},
+        config: SyncConfig(
+          entityOrder: {0: Todo},
+          batchSize: 10,
+          entityFromJson: {entityTypeName(Todo): Todo.fromJson},
+          resolvers: {'Todo': serverWinsResolver},
+        ),
       );
 
       final result = await engine.sync();
@@ -249,9 +254,12 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [Todo], batchSize: 10),
-        entityFromJson: {Todo: Todo.fromJson},
-        resolvers: {Todo: ClientWinsResolver<SyncEntity>()},
+        config: SyncConfig(
+          entityOrder: {0: Todo},
+          batchSize: 10,
+          entityFromJson: {entityTypeName(Todo): Todo.fromJson},
+          resolvers: {'Todo': clientWinsResolver},
+        ),
       );
 
       final result = await engine.sync();
@@ -300,8 +308,11 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [Todo], batchSize: 10),
-        entityFromJson: {Todo: Todo.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Todo},
+          batchSize: 10,
+          entityFromJson: {entityTypeName(Todo): Todo.fromJson},
+        ),
       );
 
       try {
@@ -351,8 +362,11 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [Todo], batchSize: 10),
-        entityFromJson: {Todo: Todo.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Todo},
+          batchSize: 10,
+          entityFromJson: {entityTypeName(Todo): Todo.fromJson},
+        ),
       );
 
       final phases = <SyncPhase>[];
@@ -387,8 +401,11 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [Todo], batchSize: 10),
-        entityFromJson: {Todo: Todo.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Todo},
+          batchSize: 10,
+          entityFromJson: {entityTypeName(Todo): Todo.fromJson},
+        ),
       );
 
       var pending0 = await localAdapter.fetchPendingEntries('Todo', 10);
@@ -478,8 +495,11 @@ void main() {
       final engine = SyncEngine(
         localAdapter: localAdapter,
         remoteAdapter: mockRemote,
-        config: SyncConfig(entityOrder: [Todo], batchSize: 10),
-        entityFromJson: {Todo: Todo.fromJson},
+        config: SyncConfig(
+          entityOrder: {0: Todo},
+          batchSize: 10,
+          entityFromJson: {entityTypeName(Todo): Todo.fromJson},
+        ),
       );
 
       final result = await engine.sync();

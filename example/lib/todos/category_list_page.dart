@@ -142,7 +142,7 @@ class _CategoryTile extends ConsumerWidget {
             icon: const Icon(Icons.delete_outline),
             onPressed: () => ref
                 .read(categoryListProvider.notifier)
-                .deleteCategory(category),
+                .deleteCategory(category.id),
           ),
         ],
       ),

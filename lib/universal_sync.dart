@@ -10,14 +10,10 @@ export 'src/model/sync_result.dart';
 export 'src/adapter/local_adapter.dart';
 export 'src/adapter/remote_adapter.dart';
 export 'src/adapter/local/in_memory_local_adapter.dart';
-export 'src/conflict/conflict_resolver.dart';
-export 'src/conflict/server_wins_resolver.dart';
-export 'src/conflict/client_wins_resolver.dart';
 
+export 'src/conflict/conflict_resolver.dart';
 export 'src/config/sync_config.dart';
 
 export 'src/engine/sync_engine.dart';
-export 'src/engine/sync_puller.dart';
-export 'src/engine/sync_pusher.dart';
 
-export 'src/universal_sync.dart';
+export 'src/internal/type_utils.dart';

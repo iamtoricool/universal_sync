@@ -1,67 +1,32 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:test/test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:universal_sync/universal_sync.dart';
+import '../shared/mocks.dart';
+import '../shared/test_entities.dart';
 
-class MockRemoteAdapter extends Mock implements RemoteAdapter {}
-
-class _TestEntity extends SyncEntity {
-  @override
-  final String id;
-  @override
-  final int version;
-  @override
-  final DateTime createdAt;
-  @override
-  final DateTime updatedAt;
-  @override
-  final DateTime? deletedAt;
-
-  _TestEntity({
-    required this.id,
-    this.version = 0,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-  }) : deletedAt = null,
-       createdAt = createdAt ?? DateTime(2024),
-       updatedAt = updatedAt ?? DateTime(2024);
-
-  @override
-  Map<String, dynamic> toSyncJson() => {
-    'id': id,
-    'version': version,
-    'createdAt': createdAt.toIso8601String(),
-    'updatedAt': updatedAt.toIso8601String(),
-  };
-
-  factory _TestEntity.fromJson(Map<String, dynamic> json) => _TestEntity(
-    id: json['id'] as String,
-    version: json['version'] as int? ?? 0,
-  );
-}
-
-SyncQueueEntry _entry({
+SyncQueueEntry<T> _entry<T extends SyncEntity>({
   required String id,
-  required String entityId,
-  int version = 0,
-  String? payload,
+  required T data,
   SyncOperation operation = SyncOperation.insert,
   int localSequence = 0,
 }) {
-  return SyncQueueEntry(
+  return SyncQueueEntry<T>(
     id: id,
-    entityType: '_TestEntity',
-    entityId: entityId,
-    operation: operation,
-    payload: payload ?? jsonEncode({'id': entityId, 'version': version}),
     idempotencyKey: id,
-    version: version,
+    data: data,
+    operation: operation,
+    version: data.version,
     localSequence: localSequence,
     createdAt: DateTime(2024),
   );
 }
+
+SyncConfig _testConfig() => SyncConfig(
+  entityOrder: {0: TestEntity},
+  entityFromJson: {entityTypeName(TestEntity): TestEntity.fromJson},
+);
 
 void main() {
   setUpAll(() {
@@ -71,10 +36,20 @@ void main() {
 
   late InMemoryLocalAdapter localAdapter;
   late MockRemoteAdapter mockRemoteAdapter;
+  final engines = <SyncEngine>[];
 
   setUp(() {
     localAdapter = InMemoryLocalAdapter();
     mockRemoteAdapter = MockRemoteAdapter();
+  });
+
+  tearDown(() {
+    for (final e in engines) {
+      try {
+        e.dispose();
+      } catch (_) {}
+    }
+    engines.clear();
   });
 
   SyncEngine engine({
@@ -82,15 +57,16 @@ void main() {
     OnSyncComplete? onSyncComplete,
     OnError? onError,
   }) {
-    return SyncEngine(
+    final e = SyncEngine(
       localAdapter: localAdapter,
       remoteAdapter: mockRemoteAdapter,
-      config: SyncConfig(entityOrder: [_TestEntity]),
-      entityFromJson: {_TestEntity: _TestEntity.fromJson},
+      config: _testConfig(),
       onSyncStart: onSyncStart,
       onSyncComplete: onSyncComplete,
       onError: onError,
     );
+    engines.add(e);
+    return e;
   }
 
   group('SyncEngine', () {
@@ -106,7 +82,12 @@ void main() {
     });
 
     test('sync() runs push then pull', () async {
-      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await localAdapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: TestEntity(id: 'p1'),
+        ),
+      );
 
       when(() => mockRemoteAdapter.push(any())).thenAnswer(
         (_) async => PushResponse([
@@ -127,7 +108,12 @@ void main() {
     });
 
     test('push() runs push only', () async {
-      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await localAdapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: TestEntity(id: 'p1'),
+        ),
+      );
 
       when(() => mockRemoteAdapter.push(any())).thenAnswer(
         (_) async => PushResponse([
@@ -188,7 +174,12 @@ void main() {
     });
 
     test('concurrent sync() throws StateError', () async {
-      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await localAdapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: TestEntity(id: 'p1'),
+        ),
+      );
 
       late Completer<void> gate;
       gate = Completer<void>();
@@ -217,11 +208,15 @@ void main() {
 
       gate.complete();
       await sync1;
-      e.dispose();
     });
 
     test('error in push emits SyncError', () async {
-      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await localAdapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: TestEntity(id: 'p1'),
+        ),
+      );
 
       when(() => mockRemoteAdapter.push(any())).thenThrow(Exception('Push failed'));
 
@@ -238,11 +233,15 @@ void main() {
       expect(emitted.any((s) => s is SyncError), isTrue);
       expect(e.currentState, isA<SyncError>());
       await sub.cancel();
-      e.dispose();
     });
 
     test('error in pull emits SyncError', () async {
-      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await localAdapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: TestEntity(id: 'p1'),
+        ),
+      );
 
       when(() => mockRemoteAdapter.push(any())).thenAnswer(
         (_) async => PushResponse([
@@ -264,11 +263,15 @@ void main() {
       expect(emitted.any((s) => s is SyncError), isTrue);
       expect(e.currentState, isA<SyncError>());
       await sub.cancel();
-      e.dispose();
     });
 
     test('state stream emits correct sequence for sync()', () async {
-      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await localAdapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: TestEntity(id: 'p1'),
+        ),
+      );
 
       when(() => mockRemoteAdapter.push(any())).thenAnswer(
         (_) async => PushResponse([
@@ -295,11 +298,15 @@ void main() {
       expect(states.last, isA<SyncIdle>());
 
       await sub.cancel();
-      e.dispose();
     });
 
     test('cancel() stops sync and returns partial result', () async {
-      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await localAdapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: TestEntity(id: 'p1'),
+        ),
+      );
 
       when(() => mockRemoteAdapter.push(any())).thenAnswer(
         (_) async => PushResponse([
@@ -318,7 +325,12 @@ void main() {
     });
 
     test('event hooks fire at correct times', () async {
-      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await localAdapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: TestEntity(id: 'p1'),
+        ),
+      );
 
       when(() => mockRemoteAdapter.push(any())).thenAnswer(
         (_) async => PushResponse([
@@ -330,11 +342,7 @@ void main() {
       );
 
       final hookOrder = <String>[];
-      final e = SyncEngine(
-        localAdapter: localAdapter,
-        remoteAdapter: mockRemoteAdapter,
-        config: SyncConfig(entityOrder: [_TestEntity]),
-        entityFromJson: {_TestEntity: _TestEntity.fromJson},
+      final e = engine(
         onSyncStart: () => hookOrder.add('start'),
         onSyncComplete: (_) => hookOrder.add('complete'),
       );
@@ -355,15 +363,24 @@ void main() {
     });
 
     test('state returns to SyncIdle after error on next successful sync', () async {
-      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await localAdapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: TestEntity(id: 'p1'),
+        ),
+      );
 
       when(() => mockRemoteAdapter.push(any())).thenThrow(Exception('Push failed'));
       final e1 = engine();
       await expectLater(e1.sync(), throwsA(isA<Exception>()));
-      e1.dispose();
 
       final e2 = engine();
-      await localAdapter.enqueue(_entry(id: 'e2', entityId: 'p2'));
+      await localAdapter.enqueue(
+        _entry(
+          id: 'e2',
+          data: TestEntity(id: 'p2'),
+        ),
+      );
       when(() => mockRemoteAdapter.push(any())).thenAnswer(
         (_) async => PushResponse([
           SyncEntryResult.accepted(entryId: 'e2', serverSequence: 1),
@@ -378,8 +395,18 @@ void main() {
     });
 
     test('SyncInProgress reports processed and total during push', () async {
-      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
-      await localAdapter.enqueue(_entry(id: 'e2', entityId: 'p2'));
+      await localAdapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: TestEntity(id: 'p1'),
+        ),
+      );
+      await localAdapter.enqueue(
+        _entry(
+          id: 'e2',
+          data: TestEntity(id: 'p2'),
+        ),
+      );
 
       when(() => mockRemoteAdapter.push(any())).thenAnswer(
         (_) async => PushResponse([
@@ -396,7 +423,6 @@ void main() {
       final sub = e.state.where((s) => s is SyncInProgress).cast<SyncInProgress>().listen(states.add);
       await e.sync();
       await sub.cancel();
-      e.dispose();
 
       final pushStates = states.where((s) => s.phase == SyncPhase.pushing).toList();
       expect(pushStates.length, greaterThanOrEqualTo(2));
@@ -406,7 +432,12 @@ void main() {
     });
 
     test('isClean is false when push has errors', () async {
-      await localAdapter.enqueue(_entry(id: 'e1', entityId: 'p1'));
+      await localAdapter.enqueue(
+        _entry(
+          id: 'e1',
+          data: TestEntity(id: 'p1'),
+        ),
+      );
 
       when(() => mockRemoteAdapter.push(any())).thenAnswer(
         (_) async => PushResponse([

@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:universal_sync/universal_sync.dart';
 import 'package:uuid/uuid.dart';
@@ -7,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../auth/auth_provider.dart';
 import 'category.dart';
 import 'category_providers.dart';
+import 'entity_notifier.dart';
 import 'rest_remote_adapter.dart';
 import 'todo.dart';
 
@@ -14,19 +13,23 @@ final adapterProvider = Provider<InMemoryLocalAdapter>((ref) {
   return InMemoryLocalAdapter();
 });
 
-final universalSyncProvider = FutureProvider<UniversalSync>((ref) async {
+final syncEngineProvider = FutureProvider<SyncEngine>((ref) async {
   final adapter = ref.watch(adapterProvider);
   final dio = ref.watch(dioProvider);
   final remote = RestRemoteAdapter(dio: dio);
-  final sync = UniversalSync(
+  final engine = SyncEngine(
     localAdapter: adapter,
     remoteAdapter: remote,
-    config: SyncConfig(entityOrder: [TodoCategory, Todo]),
-    entityFromJson: {Todo: Todo.fromJson, TodoCategory: TodoCategory.fromJson},
+    config: SyncConfig(
+      entityOrder: {0: TodoCategory, 1: Todo},
+      entityFromJson: {
+        entityTypeName(TodoCategory): TodoCategory.fromJson,
+        entityTypeName(Todo): Todo.fromJson,
+      },
+    ),
   );
-  await sync.init();
-  ref.onDispose(() => sync.dispose());
-  return sync;
+  ref.onDispose(() => engine.dispose());
+  return engine;
 });
 
 final pendingCountProvider = FutureProvider<int>((ref) async {
@@ -43,19 +46,23 @@ final totalPendingCountProvider = FutureProvider<int>((ref) async {
   return todoPending + catPending;
 });
 
-class TodoListNotifier extends AsyncNotifier<List<Todo>> {
+class TodoListNotifier extends EntityNotifier<Todo> {
   @override
-  Future<List<Todo>> build() async {
-    ref.watch(syncStateProvider);
-    final adapter = ref.read(adapterProvider);
-    final entities = adapter.entities;
-    final todoMaps = entities['Todo']?.values ?? <Map<String, dynamic>>[];
-    final todos = todoMaps
-        .where((m) => m['deletedAt'] == null)
-        .map((m) => Todo.fromJson(Map<String, dynamic>.from(m)))
-        .toList();
-    todos.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return todos;
+  String get entityType => 'Todo';
+
+  @override
+  Todo Function(Map<String, dynamic>) get fromJson => Todo.fromJson;
+
+  @override
+  int Function(Todo, Todo) get sortComparator =>
+      (a, b) => b.createdAt.compareTo(a.createdAt);
+
+  Future<void> toggleDone(Todo todo) async {
+    await modify(
+      todo.id,
+      (current) =>
+          current.copyWith(isDone: !current.isDone, updatedAt: DateTime.now()),
+    );
   }
 
   Future<void> addTodo(
@@ -63,38 +70,19 @@ class TodoListNotifier extends AsyncNotifier<List<Todo>> {
     String description, {
     String? categoryId,
   }) async {
-    final adapter = ref.read(adapterProvider);
     final id = const Uuid().v4();
     final now = DateTime.now();
-    final todo = Todo(
-      id: id,
-      version: 0,
-      createdAt: now,
-      updatedAt: now,
-      title: title,
-      description: description,
-      categoryId: categoryId,
+    await insert(
+      Todo(
+        id: id,
+        version: 0,
+        createdAt: now,
+        updatedAt: now,
+        title: title,
+        description: description,
+        categoryId: categoryId,
+      ),
     );
-    final data = todo.toSyncJson();
-    final seq = await adapter.nextSequence();
-    await adapter.transaction(() async {
-      await adapter.upsertEntity('Todo', data);
-      await adapter.enqueue(
-        SyncQueueEntry(
-          id: const Uuid().v4(),
-          idempotencyKey: const Uuid().v4(),
-          entityType: 'Todo',
-          entityId: id,
-          operation: SyncOperation.insert,
-          payload: jsonEncode(data),
-          version: 0,
-          localSequence: seq,
-          createdAt: now,
-        ),
-      );
-    });
-    ref.invalidateSelf();
-    ref.invalidate(pendingCountProvider);
   }
 
   Future<void> updateTodo(
@@ -103,105 +91,19 @@ class TodoListNotifier extends AsyncNotifier<List<Todo>> {
     String description, {
     String? categoryId,
   }) async {
-    final adapter = ref.read(adapterProvider);
-    final map = adapter.entities['Todo']?[id];
-    if (map == null) return;
-    final todo = Todo.fromJson(Map<String, dynamic>.from(map));
-    final now = DateTime.now();
-    final updated = todo.copyWith(
-      title: title,
-      description: description,
-      categoryId: categoryId,
-      updatedAt: now,
-    );
-    final data = updated.toSyncJson();
-    final seq = await adapter.nextSequence();
-    await adapter.transaction(() async {
-      await adapter.upsertEntity('Todo', data);
-      await adapter.enqueue(
-        SyncQueueEntry(
-          id: const Uuid().v4(),
-          idempotencyKey: const Uuid().v4(),
-          entityType: 'Todo',
-          entityId: id,
-          operation: SyncOperation.update,
-          payload: jsonEncode(data),
-          version: todo.version,
-          localSequence: seq,
-          createdAt: now,
-        ),
-      );
-    });
-    ref.invalidateSelf();
-    ref.invalidate(pendingCountProvider);
-  }
-
-  Future<void> toggleDone(Todo todo) async {
-    final adapter = ref.read(adapterProvider);
-    final map = adapter.entities['Todo']?[todo.id];
-    if (map == null) return;
-    final current = Todo.fromJson(Map<String, dynamic>.from(map));
-    final now = DateTime.now();
-    final updated = current.copyWith(isDone: !current.isDone, updatedAt: now);
-    final data = updated.toSyncJson();
-    final seq = await adapter.nextSequence();
-    await adapter.transaction(() async {
-      await adapter.upsertEntity('Todo', data);
-      await adapter.enqueue(
-        SyncQueueEntry(
-          id: const Uuid().v4(),
-          idempotencyKey: const Uuid().v4(),
-          entityType: 'Todo',
-          entityId: todo.id,
-          operation: SyncOperation.update,
-          payload: jsonEncode(data),
-          version: current.version,
-          localSequence: seq,
-          createdAt: now,
-        ),
-      );
-    });
-    ref.invalidateSelf();
-    ref.invalidate(pendingCountProvider);
-  }
-
-  Future<void> deleteTodo(Todo todo) async {
-    final adapter = ref.read(adapterProvider);
-    await adapter.softDeleteEntity('Todo', todo.id);
-    final map = adapter.entities['Todo']?[todo.id];
-    if (map == null) return;
-    final seq = await adapter.nextSequence();
-    await adapter.enqueue(
-      SyncQueueEntry(
-        id: const Uuid().v4(),
-        idempotencyKey: const Uuid().v4(),
-        entityType: 'Todo',
-        entityId: todo.id,
-        operation: SyncOperation.delete,
-        payload: jsonEncode(Map<String, dynamic>.from(map)),
-        version: todo.version,
-        localSequence: seq,
-        createdAt: DateTime.now(),
+    await modify(
+      id,
+      (current) => current.copyWith(
+        title: title,
+        description: description,
+        categoryId: categoryId,
+        updatedAt: DateTime.now(),
       ),
     );
-    ref.invalidateSelf();
-    ref.invalidate(pendingCountProvider);
   }
 
-  Future<void> triggerSync() async {
-    try {
-      final sync = await ref.read(universalSyncProvider.future);
-      await sync.engine.sync();
-    } catch (_) {}
-    ref.invalidateSelf();
-    ref.invalidate(pendingCountProvider);
-    ref.invalidate(pendingCategoryCountProvider);
-  }
-
-  void resetAndInvalidate() {
-    ref.invalidateSelf();
-    ref.invalidate(pendingCountProvider);
-    ref.invalidate(pendingCategoryCountProvider);
+  Future<void> deleteTodo(String id) async {
+    await delete(id);
   }
 }
 
@@ -210,10 +112,10 @@ final todoListProvider = AsyncNotifierProvider<TodoListNotifier, List<Todo>>(
 );
 
 final syncStateProvider = StreamProvider<SyncState>((ref) {
-  final async = ref.watch(universalSyncProvider);
-  final sync = async.valueOrNull;
-  if (sync == null) return const Stream.empty();
-  return _syncStates(sync.engine);
+  final async = ref.watch(syncEngineProvider);
+  final engine = async.valueOrNull;
+  if (engine == null) return const Stream.empty();
+  return _syncStates(engine);
 });
 
 Stream<SyncState> _syncStates(SyncEngine engine) async* {
