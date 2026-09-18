@@ -1,15 +1,14 @@
-name: universal_sync
-description: A starting point for Dart libraries or applications.
-version: 1.0.0
-# repository: https://github.com/my_org/my_repo
+name: universal_sync_workspace
+description: Workspace for the universal_sync ecosystem.
+publish_to: none
 
 environment:
   sdk: ^3.14.0
 
-# Add regular dependencies here.
-dependencies:
-  # path: ^1.9.0
+workspace:
+  - packages/universal_sync
+  - packages/universal_sync_builder
+  - examples/drift_app
 
 dev_dependencies:
   lints: ^6.0.0
-  test: ^1.25.6
