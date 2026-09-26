@@ -1,0 +1,25 @@
+name: universal_sync
+description: >-
+  A Drift-native, compile-time-typed, offline-first sync core. Ships the
+  transport contract and engine; backend adapters live in separate packages.
+version: 0.1.0
+repository: https://github.com/iamtoricool/universal_sync
+topics:
+  - sync
+  - offline-first
+  - drift
+  - database
+
+environment:
+  sdk: ^3.14.0
+
+resolution: workspace
+
+dependencies:
+  drift: ^2.35.4
+
+dev_dependencies:
+  build_runner: ^2.4.0
+  drift_dev: ^2.35.3
+  lints: ^6.0.0
+  test: ^1.33.0

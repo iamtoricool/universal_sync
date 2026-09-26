@@ -1,0 +1,5 @@
+# Build artifacts and repository-only files are not published.
+.dart_tool/
+build/
+doc/
+test/
