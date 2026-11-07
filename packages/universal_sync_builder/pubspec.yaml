@@ -1,0 +1,21 @@
+name: universal_sync_builder
+description: build_runner generator for universal_sync annotations.
+version: 0.1.0
+repository: https://github.com/iamtoricool/universal_sync
+
+environment:
+  sdk: ^3.14.0
+
+resolution: workspace
+
+dependencies:
+  analyzer: ^14.0.0
+  build: ^5.0.0
+  dart_style: ^3.1.2
+
+dev_dependencies:
+  build_test: ^3.0.0
+  drift: ^2.35.4
+  lints: ^6.0.0
+  test: ^1.33.0
+  universal_sync: ^0.1.0

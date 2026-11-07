@@ -1,0 +1,7 @@
+builders:
+  sync_builder:
+    import: "package:universal_sync_builder/universal_sync_builder.dart"
+    builder_factories: ["syncBuilder"]
+    build_extensions: {".dart": [".sync.dart"]}
+    auto_apply: dependents
+    build_to: source
