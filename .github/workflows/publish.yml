@@ -1,0 +1,67 @@
+name: Publish
+
+# Publishes the runtime package when a version tag is pushed, for example:
+#
+#   git tag v0.1.0
+#   git push origin v0.1.0
+#
+# The tag must match `version:` in packages/universal_sync/pubspec.yaml.
+#
+# Authentication uses pub.dev trusted publishing (OIDC): enable it for this
+# repository on https://pub.dev/packages/universal_sync/admin. No long-lived
+# PUB_CREDENTIALS secret is required. To use a token instead, replace the
+# publish step with:
+#
+#   env:
+#     PUB_CREDENTIALS: ${{ secrets.PUB_CREDENTIALS }}
+#   run: dart pub publish --force
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/universal_sync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install workspace dependencies
+        run: dart pub get
+
+      - name: Verify tag matches pubspec version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -n1 | tr -d '[:space:]')"
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read version from packages/universal_sync/pubspec.yaml"
+            exit 1
+          fi
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::Tag v$TAG does not match universal_sync version $VERSION"
+            exit 1
+          fi
+          echo "Releasing universal_sync v$VERSION"
+
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze
+        run: dart analyze --fatal-infos
+
+      - name: Test
+        run: dart test
+
+      - name: Publish to pub.dev
+        run: dart pub publish --force

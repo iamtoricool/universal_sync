@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install workspace dependencies
+        run: dart pub get
+
+      - name: Verify formatting
+        run: |
+          find packages examples \
+            -path '*/.dart_tool' -prune -o \
+            -path '*/build' -prune -o \
+            -name '*.dart' ! -name '*.g.dart' ! -name '*.sync.dart' -print0 \
+            | xargs -0 dart format --output=none --set-exit-if-changed
+
+      - name: Generate example code
+        working-directory: examples/drift_app
+        run: dart run build_runner build
+
+      - name: Verify generated code is current
+        run: git diff --exit-code -- examples/drift_app/lib
+
+      - name: Analyze workspace
+        run: dart analyze --fatal-infos
+
+      - name: Test runtime package
+        working-directory: packages/universal_sync
+        run: dart test
+
+      - name: Test builder package
+        working-directory: packages/universal_sync_builder
+        run: dart test
+
+      - name: Test generator integration
+        working-directory: examples/drift_app
+        run: dart test
