@@ -207,6 +207,10 @@ await harness.settle();
 expect(harness.server.rowsFor('tasks'), hasLength(1));
 ```
 
+The repository suite has **176 tests** and **99.2% line coverage** (excluding
+generated schema code); see [doc/testing.md](https://github.com/iamtoricool/universal_sync/blob/main/packages/universal_sync/doc/testing.md)
+for the invariant matrix, coverage gate and generator negative fixtures.
+
 ## Releasing
 
 1. Bump `version:` in `pubspec.yaml` and add a `CHANGELOG.md` entry.
@@ -225,8 +229,9 @@ publishing (OIDC). Pull requests targeting `main` run the `CI` workflow only.
 
 MVP is implemented and tested: contracts, schema, journal, engine, typed write
 facade, `build_runner` generator (`@Syncable` / `@SyncDatabase`), test doubles
-and docs. Remaining: reconcile/isolate extras (P6). Backend adapters are
-intentionally out of scope for this package.
+and docs, with a 176-test suite at 99.2% line coverage. Remaining: reconcile/
+isolate extras (P6). Backend adapters are intentionally out of scope for this
+package.
 
 ## License
 

@@ -26,7 +26,10 @@ First working release of the Drift-native sync core.
   `universal_sync_builder`, generating typed `SyncEntity` descriptors,
   `db.syncEntities`, `sync.<table>` extensions and `openSync(...)`.
 - **Testing utilities**: `FakeTransport`, `SyncTestHarness`.
-- **Docs**: README, protocol, guarantees, adapter guide.
+- **Docs**: README, protocol, guarantees, adapter guide, testing guide.
+- **Tests**: 176 tests, 99.2% line coverage (generated schema excluded),
+  model-based offline convergence / replay / crash suites, and 8 negative
+  builder fixtures wired into CI.
 
 ### Known gaps (next milestones)
 

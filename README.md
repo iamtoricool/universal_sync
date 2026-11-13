@@ -28,6 +28,12 @@ dart test                    # run inside a package, e.g.:
 (cd packages/universal_sync && dart test)
 (cd packages/universal_sync_builder && dart test)
 (cd examples/drift_app && dart run build_runner build && dart test)
+
+# Coverage gate (95% lines, generated code excluded)
+./tool/coverage.sh
+
+# Generator negative fixtures
+./tool/verify_builder_failures.sh
 ```
 
 Generated files (`*.g.dart`, `*.sync.dart`) are excluded from the format gate:

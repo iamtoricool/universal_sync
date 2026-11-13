@@ -1015,7 +1015,10 @@ Implemented and verified (`dart analyze --fatal-infos` clean, 26 tests green):
   `universal_sync_builder`; generated `SyncEntity` descriptors, registry,
   `sync.<table>` extensions and `openSync(...)`; `examples/drift_app` proves a
   Drift app syncs with no hand-written entity code.
-- **Packaging** — README, protocol/guarantees/adapter docs, MIT license,
+- **Tests** — 176 tests, 99.2% line coverage (generated schema excluded),
+  seeded model-based convergence/replay/crash suites, 95% coverage gate, and
+  8 negative builder fixtures in CI.
+- **Packaging** — README, protocol/guarantees/adapter/testing docs, MIT license,
   changelog, CI workflow, `.pubignore`, Dart workspace monorepo.
 
 Remaining milestones: P6 (reconcile via `tableUpdates`, isolate runner,
