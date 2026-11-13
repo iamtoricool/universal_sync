@@ -44,16 +44,35 @@ void main() {
     expect(await sync.tasks.find('t1'), isNull);
   });
 
+  test('int keys and .named() columns use runtime SQL names', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final server = FakeTransport();
+    final sync = await openSync(db, transport: server);
+    addTearDown(() async {
+      await sync.dispose();
+      await db.close();
+    });
+
+    final note = await sync.notes.create(NotesCompanion.insert(body: 'hello'));
+    await sync.drain();
+
+    final wire = server.rowsFor('notes').single;
+    expect(wire['id'], note.id);
+    expect(wire['note_body'], 'hello');
+    expect(wire.containsKey('body'), isFalse);
+  });
+
   test('generated registry exposes every annotated table', () async {
     final db = AppDatabase(NativeDatabase.memory());
     addTearDown(db.close);
 
     final entities = db.syncEntities;
-    expect(entities, hasLength(1));
-    expect(entities.single.ref.table, 'tasks');
-    expect(entities.single.ref.primaryKey, ['id']);
-    expect(entities.single.ref.updatedAtColumn, 'updated_at');
-    expect(entities.single.ref.ownerColumn, 'user_id');
-    expect(entities.single.ref.serverManagedColumns, {'updated_at'});
+    expect(entities, hasLength(2));
+    expect(entities.map((e) => e.ref.table), containsAll(['tasks', 'notes']));
+    final tasks = entities.firstWhere((e) => e.ref.table == 'tasks');
+    expect(tasks.ref.primaryKey, ['id']);
+    expect(tasks.ref.updatedAtColumn, 'updated_at');
+    expect(tasks.ref.ownerColumn, 'user_id');
+    expect(tasks.ref.serverManagedColumns, {'updated_at'});
   });
 }

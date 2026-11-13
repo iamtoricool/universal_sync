@@ -76,6 +76,14 @@ final class _DatabaseGenerator {
   final ClassElement database;
 
   _Section? generate() {
+    if (!database.metadata.annotations.any(_isDriftDatabase)) {
+      throw _SyncableError(
+        database.name!,
+        '@SyncDatabase() requires a @DriftDatabase(tables: [...]) annotation '
+        'so the generated registry knows which tables to sync.',
+      );
+    }
+
     final prefix = _stringField(database, 'SyncDatabase', 'prefix') ?? '';
     final entities = <_Entity>[];
     for (final table in _tablesOf(database)) {
@@ -393,6 +401,12 @@ final class _SyncableError implements Exception {
 // ── Analyzer helpers ────────────────────────────────────────────────────────
 
 bool _hasSyncDatabase(ClassElement element) => _annotation(element, 'SyncDatabase', 'universal_sync') != null;
+
+bool _isDriftDatabase(ElementAnnotation annotation) {
+  final type = _annotationType(annotation);
+  if (type == null || type.displayName != 'DriftDatabase') return false;
+  return (type.library?.uri.toString() ?? '').startsWith('package:drift/');
+}
 
 ElementAnnotation? _annotation(
   Element element,

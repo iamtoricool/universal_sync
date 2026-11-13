@@ -20,8 +20,19 @@ class Tasks extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// A second synced table without timestamps/owner, an int key and a renamed
+/// SQL column, to exercise the generator's variant paths.
+@Syncable(key: #id)
+class Notes extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get body => text().named('note_body')();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 @SyncDatabase()
-@DriftDatabase(tables: [Tasks])
+@DriftDatabase(tables: [Tasks, Notes])
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 

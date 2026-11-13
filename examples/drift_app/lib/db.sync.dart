@@ -56,14 +56,47 @@ SyncEntity<Tasks, Task, String> tasksSyncEntity(AppDatabase db) {
   );
 }
 
+SyncEntity<Notes, Note, int> notesSyncEntity(AppDatabase db) {
+  final wireToDart = <String, String>{
+    db.notes.id.name: 'id',
+    db.notes.body.name: 'body',
+  };
+  final dartToWire = <String, String>{
+    'id': db.notes.id.name,
+    'body': db.notes.body.name,
+  };
+
+  return SyncEntity<Notes, Note, int>(
+    table: db.notes,
+    keyColumns: [db.notes.id.name],
+    keyOf: (row) => row.id,
+    whereKey: (table, key) => table.id.equals(key),
+    encode: (row) => <String, Object?>{
+      for (final entry
+          in row.toJson(serializer: _universalSyncWireSerializer).entries)
+        dartToWire[entry.key] ?? entry.key: entry.value,
+    },
+    decode: (json) => Note.fromJson(<String, dynamic>{
+      for (final entry in json.entries)
+        wireToDart[entry.key] ?? entry.key: entry.value,
+    }, serializer: _universalSyncWireSerializer),
+    keyParts: (key) => <Object?>[key],
+    keyFromParts: (parts) => parts.first as int,
+    keyPartsFromRow: (json) => <Object?>[json[db.notes.id.name]],
+    expectedColumns: [for (final column in db.notes.$columns) column.name],
+  );
+}
+
 extension AppDatabaseSync on AppDatabase {
   List<SyncEntityBase> get syncEntities => <SyncEntityBase>[
     tasksSyncEntity(this),
+    notesSyncEntity(this),
   ];
 }
 
 extension AppDatabaseSyncEngine on UniversalSync<AppDatabase> {
   SyncTable<Tasks, Task, String> get tasks => table(tasksSyncEntity(db));
+  SyncTable<Notes, Note, int> get notes => table(notesSyncEntity(db));
 }
 
 Future<UniversalSync<AppDatabase>> openSync(
