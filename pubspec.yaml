@@ -11,4 +11,5 @@ workspace:
   - examples/drift_app
 
 dev_dependencies:
+  coverage: ^1.16.0
   lints: ^6.0.0

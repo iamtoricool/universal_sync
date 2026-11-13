@@ -21,7 +21,7 @@ jobs:
 
       - name: Verify formatting
         run: |
-          find packages examples \
+          find packages examples tool \
             -path '*/.dart_tool' -prune -o \
             -path '*/build' -prune -o \
             -name '*.dart' ! -name '*.g.dart' ! -name '*.sync.dart' -print0 \
@@ -37,9 +37,16 @@ jobs:
       - name: Analyze workspace
         run: dart analyze --fatal-infos
 
-      - name: Test runtime package
+      - name: Test runtime package with coverage
         working-directory: packages/universal_sync
-        run: dart test
+        run: ../../tool/coverage.sh
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: packages/universal_sync/coverage/lcov.info
+          if-no-files-found: error
 
       - name: Test builder package
         working-directory: packages/universal_sync_builder
@@ -48,3 +55,15 @@ jobs:
       - name: Test generator integration
         working-directory: examples/drift_app
         run: dart test
+
+  builder-negatives:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: Install workspace dependencies
+        run: dart pub get
+      - name: Verify builder diagnostics
+        run: ./tool/verify_builder_failures.sh
