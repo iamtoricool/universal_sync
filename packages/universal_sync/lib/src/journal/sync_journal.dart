@@ -490,6 +490,18 @@ final class SyncJournal {
     )..where((t) => t.entity.equals(entity) & t.keyHash.equals(hash))).go();
   }
 
+  /// Releases every in-flight lease unconditionally (used by `dispose`).
+  Future<int> releaseAllLeases() async {
+    return (db.update(schema.outbox)..where((t) => t.state.equals('inflight'))).write(
+      const UsOutboxCompanion(
+        state: Value('pending'),
+        deliveredMaybe: Value(1),
+        leaseUntil: Value(null),
+        leasedBy: Value(null),
+      ),
+    );
+  }
+
   /// Reclaims leases left behind by a killed process.
   Future<int> recoverLeases() async {
     final nowMs = _nowMs;
@@ -744,8 +756,9 @@ final class SyncJournal {
   Future<int> outboxBytes() async {
     final rows = await db
         .customSelect(
-          'SELECT COALESCE(SUM(LENGTH(row_json) + LENGTH(delta_json)), 0) AS b '
-          'FROM $_outbox',
+          'SELECT COALESCE(SUM('
+          'LENGTH(COALESCE(row_json, \'\')) + '
+          'LENGTH(COALESCE(delta_json, \'\'))), 0) AS b FROM $_outbox',
         )
         .get();
     return rows.first.read<int>('b');

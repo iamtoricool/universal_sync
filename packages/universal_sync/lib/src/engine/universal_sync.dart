@@ -240,43 +240,53 @@ final class UniversalSync<DB extends GeneratedDatabase> {
             final pending = await journal.pendingKeys(adapter.ref.table, keys);
 
             for (final row in rows) {
-              final parts = adapter.keyPartsFromJsonRow(row);
-              final keyJson = adapter.keyJsonOfParts(parts);
+              try {
+                final parts = adapter.keyPartsFromJsonRow(row);
+                if (parts.isEmpty || parts.any((part) => part == null)) {
+                  _emit(
+                    SyncRowRejected(
+                      at: _now,
+                      entity: adapter.ref.table,
+                      message: 'Remote row is missing its primary key.',
+                    ),
+                  );
+                  continue;
+                }
+                final keyJson = adapter.keyJsonOfParts(parts);
 
-              if (tombstones.contains(keyJson)) continue;
+                if (tombstones.contains(keyJson)) continue;
 
-              final owner = adapter.ownerFromJson(row);
-              final user = session.userId;
-              if (owner != null && user != null && owner != user) {
-                _emit(
-                  SyncRowRejected(
-                    at: _now,
-                    entity: adapter.ref.table,
-                    message: 'Row owned by $owner was skipped for user $user',
-                  ),
-                );
-                continue;
-              }
+                final owner = adapter.ownerFromJson(row);
+                final user = session.userId;
+                if (owner != null && user != null && owner != user) {
+                  _emit(
+                    SyncRowRejected(
+                      at: _now,
+                      entity: adapter.ref.table,
+                      message: 'Row owned by $owner was skipped for user $user',
+                    ),
+                  );
+                  continue;
+                }
 
-              if (pending.contains(keyJson)) {
-                final outcome = await _resolveConflict(adapter, parts, row);
-                conflicts += outcome.conflicts;
-                if (outcome.applied) pagePulled++;
-                continue;
-              }
+                if (pending.contains(keyJson)) {
+                  final outcome = await _resolveConflict(adapter, parts, row);
+                  conflicts += outcome.conflicts;
+                  if (outcome.applied) pagePulled++;
+                  continue;
+                }
 
-              if (options.skipUnchangedPulls) {
-                final local = await adapter.readLocalByParts(db, parts);
-                if (local != null) {
-                  final localTs = adapter.updatedAtFromJson(local);
-                  final remoteTs = adapter.updatedAtFromJson(row);
-                  if (localTs != null && remoteTs != null && !remoteTs.isAfter(localTs)) {
-                    continue;
+                if (options.skipUnchangedPulls) {
+                  final local = await adapter.readLocalByParts(db, parts);
+                  if (local != null) {
+                    final localTs = adapter.updatedAtFromJson(local);
+                    final remoteTs = adapter.updatedAtFromJson(row);
+                    if (localTs != null && remoteTs != null && !remoteTs.isAfter(localTs)) {
+                      continue;
+                    }
                   }
                 }
-              }
 
-              try {
                 await adapter.applyRemoteRow(db, row);
                 pagePulled++;
               } catch (error) {
@@ -463,7 +473,7 @@ final class UniversalSync<DB extends GeneratedDatabase> {
   Future<void> dispose() async {
     _debounce?.cancel();
     await _sessionSub?.cancel();
-    await journal.recoverLeases();
+    await journal.releaseAllLeases();
     await transport.close();
     await _events.close();
     await _statusController.close();
@@ -528,7 +538,8 @@ final class UniversalSync<DB extends GeneratedDatabase> {
             final PushOutcome outcome;
             try {
               outcome = await transport.push(batch);
-            } on SyncFailure catch (error) {
+            } catch (thrown) {
+              final error = thrown is SyncFailure ? thrown : TransientFailure(thrown.toString());
               final next = _retryAt(chunk.first, error);
               final notSent =
                   error.certainty == DeliveryCertainty.notSent && (error is TransientFailure || error is RateLimited);
@@ -639,7 +650,9 @@ final class UniversalSync<DB extends GeneratedDatabase> {
       if (bySequence.containsKey(ack.sequence)) invalid = true;
       bySequence[ack.sequence] = ack;
     }
-    if (invalid || entries.any((entry) => !bySequence.containsKey(entry.sequence))) {
+    if (invalid ||
+        bySequence.length != entries.length ||
+        entries.any((entry) => !bySequence.containsKey(entry.sequence))) {
       await db.transaction(() async {
         for (final entry in entries) {
           await journal.releaseMaybeApplied(
@@ -673,6 +686,31 @@ final class UniversalSync<DB extends GeneratedDatabase> {
         switch (ack.status) {
           case ChangeStatus.applied:
           case ChangeStatus.superseded:
+            if (ack.status == ChangeStatus.applied &&
+                entry.kind != SyncChangeKind.delete &&
+                adapter.ref.serverManagedColumns.isNotEmpty &&
+                ack.serverRow == null) {
+              await journal.releaseMaybeApplied(
+                entry,
+                const TransientFailure(
+                  'transport omitted serverRow for server-managed columns',
+                ),
+                _now,
+                countFailure: false,
+              );
+              failed++;
+              stop = true;
+              _emit(
+                TransportContractViolation(
+                  at: _now,
+                  message:
+                      'Applied ack for ${entry.entity} is missing '
+                      'serverRow, but the entity declares server-managed '
+                      'columns.',
+                ),
+              );
+              break;
+            }
             if (ack.serverRow != null && entry.kind != SyncChangeKind.delete) {
               try {
                 await adapter.applyRemoteRow(db, ack.serverRow!);
@@ -787,6 +825,7 @@ final class UniversalSync<DB extends GeneratedDatabase> {
                   ),
                 );
                 await _promoteNextAfterPark(adapter, entry);
+                stop = true;
               } else {
                 final next = _retryAt(entry, failure);
                 await journal.releaseMaybeApplied(
@@ -796,6 +835,7 @@ final class UniversalSync<DB extends GeneratedDatabase> {
                   countFailure: true,
                 );
                 failed++;
+                stop = true;
                 _emit(
                   RetryScheduled(
                     at: _now,

@@ -38,8 +38,14 @@ final class FakeTransport extends SyncTransport {
   /// Every sequence accepted by [push], in the order it was applied.
   final List<int> pushedSequences = [];
 
+  /// Every batch received by [push].
+  final List<PushBatch> pushedBatches = [];
+
   /// When true, acks omit the last change to exercise contract validation.
   bool dropLastAck = false;
+
+  /// When true, applied acks omit `serverRow` even for server-managed columns.
+  bool omitServerRow = false;
 
   /// When true, an already-applied idempotency key is acked as `superseded`.
   bool dedupeByIdempotency = false;
@@ -82,6 +88,7 @@ final class FakeTransport extends SyncTransport {
       throw pendingFailure;
     }
 
+    pushedBatches.add(batch);
     final entity = batch.entity.table;
     final rows = _rows.putIfAbsent(entity, () => {});
     final revisions = _rowRevisions.putIfAbsent(entity, () => {});
@@ -113,7 +120,7 @@ final class FakeTransport extends SyncTransport {
           revisions[keyJson] = ++_revision;
           tombstones.remove(keyJson);
           _appliedSequences.add(change.sequence);
-          acks.add(ChangeAck.applied(change.sequence, serverRow: Map.of(row)));
+          acks.add(_applied(change.sequence, row));
 
         case SyncChangeKind.update:
           final current = rows[keyJson];
@@ -131,7 +138,7 @@ final class FakeTransport extends SyncTransport {
           rows[keyJson] = row;
           revisions[keyJson] = ++_revision;
           _appliedSequences.add(change.sequence);
-          acks.add(ChangeAck.applied(change.sequence, serverRow: Map.of(row)));
+          acks.add(_applied(change.sequence, row));
 
         case SyncChangeKind.delete:
           rows.remove(keyJson);
@@ -189,6 +196,11 @@ final class FakeTransport extends SyncTransport {
       hasMore: events.length > request.limit,
     );
   }
+
+  ChangeAck _applied(int sequence, Map<String, Object?> row) => ChangeAck.applied(
+    sequence,
+    serverRow: omitServerRow ? null : Map.of(row),
+  );
 
   static int _sequenceOf(String idempotencyKey) {
     final index = idempotencyKey.lastIndexOf(':');

@@ -62,16 +62,22 @@ sealed class SyncCursor {
 
   static SyncCursor? decode(String? raw) {
     if (raw == null) return null;
-    final json = jsonDecode(raw);
-    if (json is! Map) return null;
-    return switch (json['type']) {
-      'opaque' => OpaqueCursor(json['token'] as String? ?? ''),
-      'keyset' => KeysetCursor(
-        updatedAt: DateTime.parse(json['updatedAt'] as String).toUtc(),
-        key: (json['key'] as List?)?.cast<Object?>() ?? const [],
-      ),
-      _ => null,
-    };
+    try {
+      final json = jsonDecode(raw);
+      if (json is! Map) return null;
+      return switch (json['type']) {
+        'opaque' => OpaqueCursor(json['token'] as String? ?? ''),
+        'keyset' => KeysetCursor(
+          updatedAt: DateTime.parse(json['updatedAt'] as String).toUtc(),
+          key: (json['key'] as List?)?.cast<Object?>() ?? const [],
+        ),
+        _ => null,
+      };
+    } on FormatException {
+      return null;
+    } on TypeError {
+      return null;
+    }
   }
 }
 
