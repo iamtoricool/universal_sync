@@ -9,8 +9,8 @@ environment:
 resolution: workspace
 
 dependencies:
-  analyzer: ^14.0.0
-  build: ^5.0.0
+  analyzer: ">=13.0.0 <15.0.0"
+  build: ">=4.0.4 <6.0.0"
   dart_style: ^3.1.2
 
 dev_dependencies:
