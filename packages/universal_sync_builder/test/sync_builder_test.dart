@@ -1,4 +1,5 @@
 import 'package:build/build.dart';
+import 'package:build_test/build_test.dart';
 import 'package:test/test.dart';
 import 'package:universal_sync_builder/universal_sync_builder.dart';
 
@@ -8,5 +9,28 @@ void main() {
     expect(builder.buildExtensions, {
       '.dart': ['.sync.dart'],
     });
+  });
+
+  test('ignores part files and other non-library assets', () async {
+    final result = await testBuilder(
+      syncBuilder(BuilderOptions.empty),
+      {
+        'a|lib/main.dart': 'library main;',
+        'a|lib/part.dart': 'part of "main.dart";',
+      },
+    );
+
+    expect(result.succeeded, isTrue, reason: result.errors.join('\n'));
+    expect(result.outputs, isEmpty);
+  });
+
+  test('generates nothing for libraries without @SyncDatabase', () async {
+    final result = await testBuilder(
+      syncBuilder(BuilderOptions.empty),
+      {'a|lib/plain.dart': 'library plain;'},
+    );
+
+    expect(result.succeeded, isTrue, reason: result.errors.join('\n'));
+    expect(result.outputs, isEmpty);
   });
 }

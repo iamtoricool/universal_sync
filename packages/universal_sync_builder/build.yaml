@@ -5,3 +5,17 @@ builders:
     build_extensions: {".dart": [".sync.dart"]}
     auto_apply: dependents
     build_to: source
+    # Input selection belongs here, not in the builder body. Only hand-written
+    # libraries under lib/ can declare a @SyncDatabase; generated files are
+    # build output and resolving them just wastes analyzer work. Consumers can
+    # still override this with `targets.$default.builders` in their own
+    # build.yaml.
+    defaults:
+      generate_for:
+        include:
+          - lib/**.dart
+        exclude:
+          - lib/**.g.dart
+          - lib/**.gr.dart
+          - lib/**.sync.dart
+          - lib/**.config.dart

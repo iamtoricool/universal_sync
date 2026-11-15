@@ -21,6 +21,11 @@ final class SyncBuilder implements Builder {
 
   @override
   FutureOr<void> build(BuildStep buildStep) async {
+    // Parts and non-Dart assets are valid build inputs but not libraries.
+    // Ask the resolver instead of guessing from file names; generated inputs
+    // are already filtered out by `generate_for` in build.yaml.
+    if (!await buildStep.resolver.isLibrary(buildStep.inputId)) return;
+
     final library = await buildStep.resolver.libraryFor(buildStep.inputId);
     final databases = library.classes.where(_hasSyncDatabase).toList();
     if (databases.isEmpty) return;

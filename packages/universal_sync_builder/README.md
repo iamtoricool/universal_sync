@@ -33,6 +33,28 @@ The generated file (`lib/db.sync.dart` for `lib/db.dart`) contains:
 - `extension AppDatabaseSyncEngine` — `sync.tasks` typed write facades.
 - `openSync(db, transport: ...)` — opens the engine with the registry wired up.
 
+## Build scope
+
+Only hand-written libraries under `lib/` are scanned. The builder's
+`generate_for` defaults exclude generated files (`*.g.dart`, `*.gr.dart`,
+`*.sync.dart`, `*.config.dart`), so Drift, auto_route, injectable and slang
+output never reaches the analyzer. Part files and other non-library inputs are
+skipped using `resolver.isLibrary`, not file-name guesses.
+
+If a database lives outside `lib/`, override the scope in the app's
+`build.yaml`:
+
+```yaml
+targets:
+  $default:
+    builders:
+      universal_sync_builder:sync_builder:
+        generate_for:
+          include:
+            - lib/**.dart
+            - test/fixtures/**.dart
+```
+
 ## Notes
 
 - Column names are resolved at runtime from Drift's table info, so `.named()`
